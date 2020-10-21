@@ -1,0 +1,826 @@
+---
+title: "Predicting Seasonal Influenza"
+date: "June 28, 2020"
+output:
+  prettydoc::html_pretty:
+    theme: architect
+    highlight: github
+---
+
+
+
+
+
+### **Introduction** 
+
+*  The Influenza Division at the Centers for Disease Control seeks to predict the traits for influenza in the U.S. which varies greatly from season to season.  
+
+* Models for influenza are used for medical preparedness as well as scientific research.  
+
+* For this case study, we utilized the seasonal autoregressive integrated moving average (SARIMA) model to predict the number of new influenza cases reported each week consecutively for 13 weeks (equivalent to 1 business quarter) beginning April 1, 2020.  
+
+
+**Disclaimer**  
+
+The current influenza epidemiological data should be interpreted with caution as the ongoing COVID-19 pandemic might have influenced to different extents human behaviors, medical staffing procedures, as well as testing capacities at the state level. The various COVID-19 response measures to reduce SARS-CoV2 virus transmission may have an impact on influenza virus transmission within the U.S.
+
+
+
+### **Dataset Description**
+**Data Source: ** World Health Organization  
+**Time Period:  ** January 4, 2016 - May 31, 2020  
+**Interval: ** weekly  
+**Measurement: ** Number of positive flu Type A cases  
+
+**website:**   
+https://www.who.int/influenza/surveillance_monitoring/updates/latest_update_GIP_surveillance/en/
+
+
+
+
+
+### **Exploratory Data Analysis Section**  
+
+
+```{r setup, include=FALSE}
+
+library(RColorBrewer)
+library(tidyverse)
+library(GGally)
+library(astsa)
+library(tswge)
+library(vars)
+library(varSel)
+library(nnfor)
+library(signal)
+library(PolynomF)
+library(plotrix)
+library(orcutt)
+library(tseries)
+library(ggplot2)
+library(RColorBrewer)
+library(forecast)
+library(Metrics)
+
+
+#Upload Data from csv
+data = read.csv("C:/git_repositories/MSDS 7333/Case_Study_4/upload.csv")
+fludata = read.csv("C:/git_repositories/MSDS 7333/Case_Study_4/fluData.csv")
+
+#data = read.csv("D:/Downloads/upload.csv")
+# data = read.csv("C:\\Users\\Chase.Henderson\\Downloads\\upload.csv")
+
+x_original <- as.ts(data$INF_A)
+
+#Define forecast period:
+f=13
+
+#now lets define the length of ts (x)
+n0<- length(x_original)
+n <- n0-f
+n1 <- n/2
+n2 <- n/2
+nf <- n + 1
+
+# Define training Set 
+x <- as.ts(x_original[1:n])
+
+
+```
+
+Time Series Realization Plots:
+
+Let us first look at the time series to determine whether we need to transform the data.
+
+**Standard Realization Plot of Original Data**  
+
+```{r one2, echo="TRUE"}
+plotts.wge(x)
+acf(x)
+pacf(x)
+```
+
+Important observations to point out:  
+.	The data clearly exhibits a seasonal pattern   
+.	There is a slight consistent upward "linear" trend   
+.	The amplitude of the seasonal cycle increases over time  
+
+Note, the problem of an increasing amplitude can often be overcome by applying a log transformation
+
+### **Transformation Process**
+
+Step 1: Review distirbution to determine whether if a log transformation of the data is required.  
+
+
+The purposes of using a transformation are primarily to decouple the mean and the variance so that the variability is more or less constant and does not depend on the mean, ensure that the model is additive and relatively simple, and that the residuals, after fitting the model, are more or less normally distributed with zero mean and constant variance.
+
+**Review of Original Data**
+
+```{r 2, echo=TRUE}
+
+seasonplot(x, 52, col=rainbow(4), year.labels=TRUE, season.labels =TRUE,  main="Weekly flu Activty measured with Original Data")
+```
+
+The histogram appears to be skewed to the right and a log transformation is required.
+Lets take the log transformation of the data to see if that helps correct the non-normal distribution.
+
+**Review of transformed data**  
+
+```{R transform, echo=TRUE, message=FALSE, warning=FALSE}
+x <- log(x)
+x_original <- log(x_original)
+seasonplot(x, 52, col=rainbow(4), year.labels=TRUE, season.labels =TRUE,  main="Weekly flu Activty measured with Transformed Data")
+```
+  
+Taking the log of X appears to have improved the distribution.  Now lets take another look at the time realization plots.  
+
+**Standard Realization Plot using transformed data**  
+
+```{r one, echo=TRUE}
+plotts.wge(x)
+plotts.sample.wge(x)
+pacf(x)
+```
+Observations:  
+The ACF shows a large number of positive autocorrelations out to a very high number of lags, suggesting as a minimum, a first difference is required.
+ 
+
+Step 2: Determine optimal order of differencing
+
+```{R model 1a, echo=TRUE}
+
+d1.x=artrans.wge(x,phi.tr=1)
+
+```
+  
+Observations:  
+The ACF continues to exhibit a persistent autocorrelation pattern, indicating the need for a seasonal differencing.
+
+Step 3: Remove Seasonal differencing
+
+While it is believed that a need for seasonal differencing is required, we do not want to overdifference the model.  Therefore, we will perform a Dicky Fuller Test to see if our time series requires additional differencing.  
+
+
+Dicky Fuller Test:  
+the Dickey-Fuller test tests the null hypothesis that a unit root is present in an autoregressive model.  For stationarity confirmation, We want to REJECT the null hypothesis for this test and therefore acheive a p-value of less that 0.05 (or smaller).  
+
+```{R model 1ac, echo=TRUE}
+adf.test(d1.x)
+```
+Based on the Dicky Fuller Test, the pvalue is greater than 0.05 and therefore we do not reject the null hypothesis that the data is non-stationary.  
+
+To remove the non-stationarity, we need to take the seasonal difference of the data and then retake the Dicky Fuller Test to see if we were successful.
+
+```{R model 1ac2, echo=TRUE}
+
+d2.x=artrans.wge(d1.x,c(rep(0,51),1))
+
+```
+
+CONFIRM STATIONARITY
+
+Steps:
+1. Perform visual checks to confirm that all the stationarity conditions have been met.
+2. Run Dicky Fuller Test for additional confirmation.
+
+Step 1:
+Utilize the Time Realizations, Sample Autocorrelations, & Parzen Plots generated below to review the stationarity of new time series.
+
+**Time Realization, Sample Autocorrelation, & Parzen Plots**  
+
+```{R eda5a, echo=TRUE}
+
+#Time Series under review: d2.x
+# Determine periodicity range
+n <-length(d2.x)
+n1 <- n/2
+n2 <- n1+1
+
+# Plots related to Conditions 1 & 2
+plotts.sample.wge(d2.x)
+
+#Plots related to Conditions 2 & 3
+# First Half of Data-ACF
+acf(d2.x[1:n1])
+# Second Half of Data-ACF
+acf(d2.x[n2:n])
+
+```
+
+Confirm stationarity review by running a Dicky Fuller Test:
+
+```{r eda2s, echo=TRUE, message=FALSE, warning=FALSE}
+
+adf.test(d2.x)
+
+```
+  
+Interpretations:
+
+
+All three conditions appear to be met.  Data is stationary.  We can now move on the the model selection process. 
+
+### **Time Series Historical Trend Review**
+```{r eda2, echo=TRUE, message=FALSE, warning=FALSE}
+
+plotts.wge(d2.x)
+acf(d2.x)
+pacf(d2.x)
+
+```
+
+
+### **MODEL SELECTION PROCESS**
+
+Now that data appears stationary, run AIC5 to determine optimal P&Q based on AIC & BIC
+
+##### AIC5 Stationary data (d2.x) results for AIC measure:  
+
+```{r model 1d, echo=TRUE}
+aic5.wge(d2.x, p=0:5, q=0:2)
+```
+
+##### AIC5 X Data results for BIC measure:  
+
+```{R model 1e, echo=TRUE}
+aic5.wge(d2.x, p=0:5, q=0:2, type="bic")
+```
+
+Top AIC Model: SARIMA (3,1,0) x (0,1,1)52
+
+Top BIC Model: SARIMA (0,0,2) x (0,1,1)52
+
+Selected Model: SARIMA (3,1,0) x (0,1,1)52
+
+Explanation:  
+SARIMA Model (3,1,0) x (0,1,1)52 ranks among the top 5 models with the highest score in AIC and BIC.
+
+ 
+Based on AIC results-we will estimate parameters (using ) to fit an SARIMA Model(3,1,0) x (0,1,1)52, SARIMA Model(2,1,0) x (0,1,1)52, and SARIMA(1,1,1) x (0,1,1)52 and ed on the differenced data.
+
+### **SARIMA Model (3,1,0) x (0,1,1)52**
+
+### PARAMETER ESTIMATION
+
+
+```{R model 1f, echo=TRUE}
+#define model 1 p, d, q estimates:
+p=3
+q=0
+
+ARIMA_m1 = est.arma.wge(d2.x, p=p, q=q)
+```
+
+
+Now that we have fit the model. Lt us check the residuals for white noise before proceeding any further.
+
+###  RESIDUAL CHECKS
+
+Step 1: Visual Check of Residual Sample Correlations  
+
+Lets us look at the residuals to see if they visually to see if behavior resembles white noise: 
+
+```{R model 1g, echo=TRUE}
+plotts.wge(ARIMA_m1$res)
+acf(ARIMA_m1$res)
+
+```
+
+Observations:   
+Residual sample correlations appear to be within 95% limit lines.
+
+Step 2: Ljung-Box test for k=24 and K= 48
+
+Let's run the lJung-Box test for k=24 to determine the significance  
+
+Ljung-Box test for k=24:  
+ 
+```{R model 1h, echo=TRUE}
+ljung.wge(ARIMA_m1$res,p=p)
+```
+  
+Observations:  
+L Jung Box Test did not reject the null hypothesis of white noise at K=24 with p-value of .63   
+
+ Let's run the lJung-Box test for k=48 to determine the significance.
+
+Ljung-Box test for k=48:  
+
+```{R model 1i, echo=TRUE}
+ljung.wge(ARIMA_m1$res,p=p,K=48) 
+```
+  
+Observations:  
+L Jung Box Test did not reject the null hypothesis of white noise at K=48 with p-value of .58.  
+
+#### Conclusion of Residual Checks:  
+
+Based on the visual sample correlation plots and the L Jung-Box Tests, the residuals from the fitted model appear to be white.
+
+### Model Validation
+
+```{R model 1fd, echo=TRUE}
+# Set forecast window - nlook ahead periods
+f <- 13
+
+x_test <- x_original[nf:n0]
+
+
+#Confirm variable definitions:
+phi <- ARIMA_m1$phi
+vara <- ARIMA_m1$avar
+theta <- ARIMA_m1$theta
+d <- 1
+s <- 52
+
+#Run Forecast
+fm1 =fore.aruma.wge(x, phi=phi, theta=theta, d=d, s=s, n.ahead=f,limits=TRUE)
+fm1
+
+```
+
+
+#### ASE Model Forecast
+
+```{R model 1gd, echo=TRUE}
+#Determine ASE
+fm1.ASE = mean((x_test - fm1$f)^2)
+fm1.ASE
+
+```
+
+#### Model Forecast Results - Time Realization Plot
+
+```{R models 1gd, echo=TRUE}
+
+#We have predicted differences .... calculate actual results
+Model_Forecast1 =(x_test + fm1$f)/2
+
+#Plot
+plot(seq(1,n0,1), x_original, type="l", xlim = c(0,230), xlab= "Weeks", ylab = "flu Activity", main = "Influenza Type A Seasonal Forecast (13 weeks)")
+lines(seq(nf,n0,1), Model_Forecast1, type = "l", col = "red")
+
+```
+
+
+#### Plot Comparisons:  Predicted Vs. Realization Time Series
+
+#### Compare Spectral Densities:
+```{r}
+sims = 5
+SpecDen = parzen.wge(x, plot = "FALSE")
+plot(SpecDen$freq,SpecDen$pzgram, type = "l", lwd = 6)
+
+for( i in 1: sims)
+{
+  SpecDen2 = parzen.wge(gen.aruma.wge(n, phi=phi, s=s, d=d, plot = "FALSE"), plot = "FALSE")
+  lines(SpecDen2$freq,SpecDen2$pzgram, lwd = 2, col = "red")
+}
+```
+
+#### Compare ACF's:
+```{r}
+sims = 5
+ACF = acf(x, plot = "FALSE")
+plot(ACF$lag ,ACF$acf , type = "l", lwd = 6)
+
+for( i in 1: sims)
+{
+  ACF3 = acf(gen.aruma.wge(n, phi=phi, s=s, d=d, plot = "FALSE"), plot = "FALSE")
+  lines(ACF3$lag ,ACF3$acf, lwd = 2, col = "red")
+}
+
+```
+  
+Compare Predicted Vs. Actual Time Series over the 13 week forecast period: 
+
+```{r plot comparison}
+
+name1 <- "Predicted Results ARIMA 3,1,0"
+value1 <- fm1$f 
+
+
+color1 <-"Blue"
+
+
+plot(x_test, type="l",
+     xlim= c(1,13), ylim = c(8.5,10.5), 
+     ylab= "Predicted Values",
+     main= " Seasonal Flu Prediction (Model 1)")
+lines(seq(1,f), value1, col=color1)
+
+# Add a legend
+legend("bottomright", legend=c(name1, "Actual Data Series"),
+       col=c(color1, "black"), lty=1:2, cex=0.8)
+
+
+```  
+
+### **SARIMA Model (2,1,0) x (0,1,1)52**
+
+### PARAMETER ESTIMATION
+
+
+```{R model2 1f, echo=TRUE}
+#define model 1 p, d, q estimates:
+p2=2
+q2=0
+
+ARIMA_m2 = est.arma.wge(d2.x, p=p2, q=q2)
+```
+ 
+
+Now that we have fit the model. Let us check the residuals for white noise before proceeding any further.
+
+### RESIDUAL CHECKS
+
+Step 1: Visual Check of Residual Sample Correlations  
+
+Lets us look at the residuals to see if they visually to see if behavior resembles white noise:  
+
+```{R model 1g2, echo=TRUE}
+plotts.wge(ARIMA_m2$res)
+acf(ARIMA_m2$res)
+
+```
+
+Observations:   
+Residual sample correlations appear to be within 95% limit lines.
+
+Step 2: Ljung-Box test for k=24 and K= 48
+
+Let's run the lJung-Box test for k=24 to determine the significance  
+
+Ljung-Box test for k=24:  
+ 
+```{R model 1h2, echo=TRUE}
+ljung.wge(ARIMA_m2$res,p=p2)
+```
+  
+Observations:  
+L Jung Box Test did not reject the null hypothesis of white noise at K=24 with p-value of .27.   
+Let's run the lJung-Box test for k=48 to determine the significance
+
+Ljung-Box test for k=48:  
+
+```{R model 1i2, echo=TRUE}
+ljung.wge(ARIMA_m2$res,p=p2,K=48) 
+```
+  
+Observations:  
+L Jung Box Test did not reject the null hypothesis of white noise at K=48 with p-value of .35 
+
+#### Conclusion of Residual Checks:  
+
+Based on the visual sample correlation plots and the L Jung-Box Tests, the residuals from the fitted model appear to be white.
+
+### MODEL FORECAST 
+
+```{R model 1fd2, echo=TRUE}
+# Set forecast window - nlook ahead periods
+f <- 13
+
+x_test <- x_original[nf:n0]
+
+
+#Confirm variable definitions:
+phi <- ARIMA_m2$phi
+vara <- ARIMA_m2$avar
+theta <- ARIMA_m2$theta
+d <- 1
+s <- 52
+
+#Run Forecast
+fm2 =fore.aruma.wge(x, phi=phi, theta=theta, d=d, s=s, n.ahead=f,limits=TRUE)
+
+
+```
+
+
+#### ASE Model Forecast
+
+```{R model 1gd25, echo=TRUE}
+#Determine ASE
+fm2.ASE = mean((x_test - fm2$f)^2)
+fm2.ASE
+
+```
+
+#### Model Forecast Results - Time Realization Plot
+
+```{R models 1gd2, echo=TRUE}
+
+#We have predicted differences .... calculate actual results
+Model_Forecast2 =(x_test + fm2$f)/2
+
+#Plot
+plot(seq(1,n0,1), x_original, type="l", xlim = c(0,230), xlab= "Weeks", ylab = "flu Activity", main = "Influenza Type A Seasonal Forecast (13 weeks)")
+lines(seq(nf,n0,1), Model_Forecast2, type = "l", col = "red")
+
+```
+
+#### Plot Comparisons:  Predicted Vs. Realization Time Series
+
+#### Compare Spectral Densities:
+```{r 22a}
+sims = 5
+SpecDen = parzen.wge(x, plot = "FALSE")
+plot(SpecDen$freq,SpecDen$pzgram, type = "l", lwd = 6)
+
+for( i in 1: sims)
+{
+  SpecDen2 = parzen.wge(gen.aruma.wge(n, phi=phi, s=s, d=d, plot = "FALSE"), plot = "FALSE")
+  lines(SpecDen2$freq,SpecDen2$pzgram, lwd = 2, col = "red")
+}
+```
+
+#### Compare ACF's:
+```{r 22}
+sims = 5
+ACF = acf(x, plot = "FALSE")
+plot(ACF$lag ,ACF$acf , type = "l", lwd = 6)
+
+for( i in 1: sims)
+{
+  ACF3 = acf(gen.aruma.wge(206, phi=phi, s=s, d=d, plot = "FALSE"), plot = "FALSE")
+  lines(ACF3$lag ,ACF3$acf, lwd = 2, col = "red")
+}
+
+```
+  
+Compare Predicted Vs. Actual Time Series over the 13 week forecast period: 
+
+```{r plot comparison 2}
+
+
+name2 <- "Predicted Results ARIMA 2,1,0"
+
+value2 <- fm2$f
+
+
+color2 <-"red"
+
+plot(x_test, type="l",
+     xlim= c(1,13), ylim = c(8.5,10.5), 
+     ylab= "Predicted Values",
+     main= " Seasonal Flu Prediction (Model 2)")
+lines(seq(1,f), value2, col=color2)
+
+
+# Add a legend
+legend("bottomright", legend=c(name2, "Actual Data Series"),
+       col=c(color2, "black"), lty=1:2, cex=0.8)
+
+
+``` 
+
+### **SARIMA Model (1,1,2) x (0,1,1)52**
+
+### PARAMETER ESTIMATION
+
+
+```{R modeld2 1f, echo=TRUE}
+#define model 1 p, d, q estimates:
+p3=1
+q3=1
+
+ARIMA_m3 = est.arma.wge(d2.x, p=p3, q=q3)
+```
+  
+AR vs. MA Factor Table Comparison:  
+Invertibility checks to confirm that models does not use multiple AR and multiple MA terms in the same model.  
+
+```{r}
+factor.wge(phi=ARIMA_m3$phi)
+factor.wge(phi=ARIMA_m3$theta)
+
+```
+
+Now that we have fit the model, let us check the residuals for white noise before proceeding any further.
+
+### RESIDUAL CHECKS
+
+Step 1: Visual Check of Residual Sample Correlations  
+
+Lets us look at the residuals to see if they visually to see if behavior resembles white noise:  
+
+```{R model 1g23, echo=TRUE}
+plotts.wge(ARIMA_m3$res)
+acf(ARIMA_m3$res)
+
+```
+
+Observations:   
+Residual sample correlations appear to be within 95% limit lines.
+
+Step 2: Ljung-Box test for k=24 and K= 48
+
+Let's run the lJung-Box test for k=24 to determine the significance  
+
+ Ljung-Box test for k=24:  
+ 
+```{R model 1h23, echo=TRUE}
+ljung.wge(ARIMA_m3$res,p=p3)
+```
+  
+Observations:  
+L Jung Box Test did not reject the null hypothesis of white noise at K=24 with p-value of .24.   
+
+ Let's run the lJung-Box test for k=48 to determine the significance
+
+Ljung-Box test for k=48:  
+
+```{R model 1i23, echo=TRUE}
+ljung.wge(ARIMA_m3$res,p=p3,K=48) 
+```
+  
+Observations:  
+L Jung Box Test did not reject the null hypothesis of white noise at K=48 with p-value of .31 
+
+#### Conclusion of Residual Checks:  
+
+Based on the visual sample correlation plots and the L Jung-Box Tests, the residuals from the fitted model appear to be white.
+
+
+### MODEL FORECAST 
+
+
+```{R model 1fd23, echo=TRUE}
+# Set forecast window - nlook ahead periods
+f <- 13
+
+x_test <- x_original[nf:n0]
+
+
+#Confirm variable definitions:
+phi <- ARIMA_m3$phi
+vara <- ARIMA_m3$avar
+theta <- ARIMA_m3$theta
+d <- 1
+s <- 52
+
+#Run Forecast
+fm3 =fore.aruma.wge(x, phi=phi, theta=theta, d=d, s=s, n.ahead=f,limits=TRUE)
+fm3
+
+```
+
+
+#### ASE Model Forecast
+
+```{R model 1gd23, echo=TRUE}
+#Determine ASE
+fm3.ASE = mean((x_test - fm3$f)^2)
+fm3.ASE
+
+
+```
+
+#### Model Forecast Results - Time Realization Plot
+
+```{R models 1gd32, echo=TRUE}
+
+#We have predicted differences .... calculate actual results
+Model_Forecast3 =(x_test + fm3$f)/2
+
+#Plot
+plot(seq(1,n0,1), x_original, type="l", xlim = c(0,230), xlab= "Weeks", ylab = "flu Activity", main = "Influenza Type A Seasonal Forecast (13 weeks)")
+lines(seq(nf,n0,1), Model_Forecast3, type = "l", col = "green")
+
+
+```
+
+
+#### Plot Comparisons:  Predicted Vs. Realization Time Series
+
+#### Compare Spectral Densities:
+```{r 23}
+sims = 5
+SpecDen = parzen.wge(x, plot = "FALSE")
+plot(SpecDen$freq,SpecDen$pzgram, type = "l", lwd = 6)
+
+for( i in 1: sims)
+{
+  SpecDen2 = parzen.wge(gen.aruma.wge(n, phi=phi, s=s, d=d, plot = "FALSE"), plot = "FALSE")
+  lines(SpecDen2$freq,SpecDen2$pzgram, lwd = 2, col = "green")
+}
+```
+
+#### Compare ACF's:
+```{r 223}
+sims = 5
+ACF = acf(x, plot = "FALSE")
+plot(ACF$lag ,ACF$acf , type = "l", lwd = 6)
+
+for( i in 1: sims)
+{
+  ACF3 = acf(gen.aruma.wge(206, phi=phi, s=s, d=d, plot = "FALSE"), plot = "FALSE")
+  lines(ACF3$lag ,ACF3$acf, lwd = 2, col = "green")
+}
+
+```
+  
+
+
+
+Compare Predicted Vs. Actual Time Series over the 13 week forecast period: 
+
+```{r plot comparison 32}
+
+name1 <- "Predicted Results ARIMA (1,1,1)"
+
+value1 <- fm3$f 
+
+
+color1 <-"green"
+
+
+plot(x_test, type="l",
+     xlim= c(1,13), ylim = c(8.5,10.5), 
+     ylab= "Predicted Values",
+     main= " Seasonal Flu Prediction (13 weeks)")
+lines(seq(1,f), value1, col=color1)
+
+
+# Add a legend
+legend("bottomright", legend=c(name1,  "Actual Data Series"),
+       col=c(color1,  "black"), lty=1:2, cex=0.8)
+
+
+``` 
+
+
+
+Compare Predicted Vs. Actual Time Series over the 13 week forecast period for all three Models: 
+
+```{r plot comparison 32d}
+
+name1 <- "Predicted Results ARIMA (3,1,0)"
+name2 <- "Predicted Results ARIMA (2,1,0)"
+name3 <- "Predicted Results ARIMA (1,1,1)"
+value1 <- fm1$f 
+value2 <- fm2$f
+value3 <- fm3$f
+
+color1 <-"Blue"
+color2 <-"Red"
+color3 <-"green"
+
+plot(x_test, type="l",
+     xlim= c(1,13), ylim = c(8.5,10.5), 
+     ylab= "Predicted Values",
+     main= " Seasonal Flu Prediction (13 weeks)")
+lines(seq(1,f), value1, col=color1)
+lines(seq(1,f), value2, col=color2)
+lines(seq(1,f), value3, col=color3)
+
+# Add a legend
+legend("bottomright", legend=c(name1, name2, name3,  "Actual Data Series"),
+       col=c(color1, color2, color3, "black"), lty=1:2, cex=0.8)
+
+
+``` 
+
+```{r rmse55}
+## Root Mean Square Error
+
+rmse(x_test, fm1$f)
+rmse(x_test, fm2$f)
+rmse(x_test, fm3$f)
+
+```
+
+
+Final Model Forecast for the next thirteen weeks
+
+```{r rmse45}
+## Final Prediction Forecast using Model # 2
+# Set forecast window - nlook ahead periods
+f <- 13
+
+x_predict <- x_original
+
+
+#Confirm variable definitions:
+phi <- ARIMA_m2$phi
+vara <- ARIMA_m2$avar
+theta <- ARIMA_m2$theta
+d <- 1
+s <- 52
+
+#Run Forecast
+fmff =fore.aruma.wge(x_predict, phi=phi, theta=theta, d=d, s=s, n.ahead=f,limits=TRUE)
+fmff
+
+```
+
+
+```{r4}
+#Final forecast values
+fmff$f
+fmff$ll
+fmff$ul
+
+
+```
+

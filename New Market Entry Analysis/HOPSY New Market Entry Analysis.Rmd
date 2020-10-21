@@ -1,0 +1,1415 @@
+---
+title: "Hopsy Case Study - Beers and Breweries"
+author: "R Mustangs"
+date: "2/25/2019"
+output: 
+  html_document:
+    keep_md: TRUE
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, initial_setup, message=F, warning=F}
+#load my standard toolbox
+suppressWarnings(suppressMessages(library(tidyverse))) #required
+suppressWarnings(suppressMessages(library(stringr)))
+suppressWarnings(suppressMessages(library(lubridate)))
+suppressWarnings(suppressMessages(library(forcats)))
+suppressWarnings(suppressMessages(library(ggthemes)))
+suppressWarnings(suppressMessages(library(reshape2)))
+suppressPackageStartupMessages(library(dataMaid))
+suppressPackageStartupMessages(library(ggplot2))
+
+#extra tooling that is useful
+suppressWarnings(suppressMessages(library(Hmisc))) #required
+suppressWarnings(suppressMessages(library(pastecs))) #required
+suppressWarnings(suppressMessages(library(stats))) #required
+
+#some extras for mapping
+suppressWarnings(suppressMessages(library(usmap))) #required
+suppressWarnings(suppressMessages(library(maps)))
+suppressWarnings(suppressMessages(library(mapdata)))
+suppressWarnings(suppressMessages(library(ggmap)))
+suppressWarnings(suppressMessages(library(ggrepel)))
+suppressWarnings(suppressMessages(library(devtools)))
+suppressWarnings(suppressMessages(library(knitr)))
+suppressWarnings(suppressMessages(library(tcltk)))
+suppressWarnings(suppressMessages(library(aplpack)))
+suppressWarnings(suppressMessages(library(scales)))
+
+#set print options
+options(max.print=1000)
+options(tibble.print_max = 1000, tibble.print_min = 1000)
+
+#Session Info
+sessionInfo()
+
+#set your working directory for this code to work properly
+root_dir<-"/Users/chandlervaughn/Dropbox/4. Chandler/Development/git_repositories/r_mustangs/Case1"
+setwd(root_dir)
+#setwd("/Users/Dhyan/Desktop/DoingDataScience/r_mustangs/Case1")
+
+#echo `pwd`/`ls beers.csv`
+#/Users/chandlervaughn/Dropbox/4. Chandler/Development/git_repositories/r_mustangs/Case1/Data/beers.csv
+
+#echo `pwd`/`ls breweries.csv`
+#/Users/chandlervaughn/Dropbox/4. Chandler/Development/git_repositories/r_mustangs/Case1/Data/Breweries.csv
+
+####################################
+## IMPORT RAW DATASETS (being explicit with col_types after inspecting the data)
+####################################
+
+beers <- read_csv(file = "Data/Beers.csv",
+                  col_types = cols(
+                    Name = col_character(),
+                    Beer_ID = col_integer(),
+                    ABV = col_double(),
+                    IBU = col_integer(),
+                    Brewery_id = col_integer(),
+                    Style = col_character(),
+                    Ounces = col_double()
+                  )
+)
+
+breweries <- read_csv(file = "Data/Breweries.csv",
+                      col_types = cols(
+                        Brew_ID = col_integer(),
+                        Name = col_character(),
+                        City = col_character(),
+                        State = col_character()
+                      )
+)
+
+####################################
+## RUN DATAMAID ANALYSIS REPORTS ON RAW DATA
+####################################
+setwd("Analysis")
+  
+  makeDataReport(beers, replace=TRUE)
+  makeDataReport(breweries, replace=TRUE)
+
+setwd(root_dir)
+
+
+
+
+
+#check for problems
+problems(beers)
+problems(breweries)
+
+#summary of tables
+kable(summary(beers))
+kable(summary(breweries))
+
+#we have some NAs to worry about in ABV and IBU. brew_id max equals breweryid max which is good
+
+```
+***
+
+***
+```{r, question1, fig.width = 14, fig.height= 6, message=F, warning=F}
+
+
+#Question 1 - First we will find out how many breweries are in each state.
+#For safety lets trim out any bad characters and whitespace
+breweries$State <- str_trim(breweries$State)
+
+#Find the count of Breweries by State
+(breweries_count <- breweries %>%
+    filter(breweries$State %in% state.abb) %>%
+    count(State))
+
+
+#Plot the number of Breweries for each State
+#Show ggplot. Center title, with axis titles
+
+ggplot(data = breweries_count, aes(x=State, y=n, fill=n)) +
+  geom_bar(stat = "identity", colour="black") + 
+  geom_text(aes(label=n, size=5, vjust = -0.5, hjust= 0.5), show.legend = FALSE) +
+  ggtitle("Breweries By State") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  labs(x="State", y="Breweries") +
+  guides(fill = guide_legend(title = "Breweries")) +
+  theme(plot.title = element_text(hjust = 0.5, face="bold")) +
+  theme(axis.title=element_text(face="bold"))
+
+
+```
+
+***
+
+***
+
+# Hopsy Question 1
+## How many breweries are present in each state?
+
+As show in the above graph, the State population of Craft breweries varies widely depending on locality. For example, you have disparities even from "the State next door" such as 39 Breweries in California, and only 2 in Nevada. It is anticipated that these differences are largely due to State and Local laws and restrictions, population density, as well as material supply-chain and local preference factors for Craft Beer Brewing. 
+
+***
+
+***
+
+```{r, question2_and_eda, fig.width = 14, fig.height= 6, message=F, warning=F}
+#Question 2 - We will now merge the beer and breweries datasets and verify the merge.
+#rename column in breweries for simplicity on IDs
+breweries <- rename(breweries, Brewery_id=Brew_ID)
+
+#Merge both tables
+merged_beers <- merge(beers, breweries, by='Brewery_id')
+
+#Fix redundant names
+merged_beers <- rename(merged_beers, BeerName=Name.x)
+merged_beers <- rename(merged_beers, BrewerName=Name.y)
+
+#View the structure of the new table
+str(merged_beers)
+summary(merged_beers)
+
+#We will view box plots of ABV and IBU to explore the dataset
+ggplot(data=merged_beers) +
+  geom_boxplot(mapping = aes(x=State, y=ABV, fill=State), outlier.colour="black") +
+  theme_classic() +
+  ggtitle("ABV By State") +
+  theme(plot.title = element_text(hjust = 0.5)) 
+
+ggplot(data=merged_beers) +
+  geom_boxplot(mapping = aes(x=State, y=IBU, fill=State), outlier.colour="black") +
+  theme_classic()  +
+  ggtitle("IBU By State") +
+  theme(plot.title = element_text(hjust = 0.5)) 
+
+
+
+################
+## Lets Make a Better BoxPlot For Use In Presentations
+################
+color_by_median <- merged_beers %>%
+  group_by(State) %>%
+  summarise(MedianABV = median(ABV, na.rm = TRUE), MedianIBU = median(IBU, na.rm = TRUE))
+
+color_by_median <- left_join(color_by_median, merged_beers, by = c("State" = "State"))
+
+ggplot(data=color_by_median) +
+  geom_boxplot(mapping = aes(x=State, y=ABV, fill=MedianIBU), outlier.colour="black") +
+  theme_classic()  +
+  ggtitle("ABV By State") +
+  theme(plot.title = element_text(hjust = 0.5))  +
+  guides(fill = guide_legend(title = "Median IBU")) +
+  scale_y_continuous(labels = scales::percent, limits = c(NA, max(color_by_median$ABV, na.rm=TRUE)+0.005))
+
+#ABV sorted by top median
+ggplot(data=color_by_median) +
+  geom_boxplot(mapping = aes(x=reorder(color_by_median$State, color_by_median$MedianABV), y=ABV, fill=MedianIBU), outlier.colour="black") +
+  theme_classic()  +
+  ggtitle("Sorted Median ABV By State") +
+  theme(plot.title = element_text(hjust = 0.5))  +
+  guides(fill = guide_legend(title = "Median IBU")) +
+  scale_y_continuous(labels = scales::percent, limits = c(NA, max(color_by_median$ABV, na.rm=TRUE)+0.005)) +
+  labs(x="State", y="ABV")
+
+ggplot(data=color_by_median) +
+  geom_boxplot(mapping = aes(x=State, y=IBU, fill=MedianABV), outlier.colour="black") +
+  theme_classic()  +
+  ggtitle("IBU By State") +
+  theme(plot.title = element_text(hjust = 0.5))  +
+  guides(fill = guide_legend(title = "Median ABV")) +
+  scale_y_continuous(limits = c(NA, max(color_by_median$IBU, na.rm=TRUE)+0.005)) +
+  scale_fill_gradient( labels = percent)
+
+#IBU sorted by top median
+ggplot(data=color_by_median) +
+  geom_boxplot(mapping = aes(x=reorder(color_by_median$State, color_by_median$MedianIBU), y=IBU, fill=MedianABV), outlier.colour="black") +
+  theme_classic()  +
+  ggtitle("Sorted Median IBU By State") +
+  theme(plot.title = element_text(hjust = 0.5))  +
+  guides(fill = guide_legend(title = "Median ABV")) +
+  scale_y_continuous(limits = c(NA, max(color_by_median$IBU, na.rm=TRUE)+0.005)) +
+  scale_fill_gradient( labels = percent) +
+  labs(x="State", y="IBU")
+
+#Draw a line at 50 so we can determine High Versus Low
+#IBU sorted by top median w/line
+ggplot(data=color_by_median) +
+  geom_boxplot(mapping = aes(x=reorder(color_by_median$State, color_by_median$MedianIBU), y=IBU, fill=MedianABV), outlier.colour="black") +
+  geom_abline(intercept = 50, slope = 0, na.rm=TRUE, linetype="dashed", size=1.5, col = "Red3") + 
+  theme_classic()  +
+  ggtitle("Sorted 50< Median IBU >50 By State") +
+  theme(plot.title = element_text(hjust = 0.5))  +
+  guides(fill = guide_legend(title = "Median ABV")) +
+  scale_y_continuous(limits = c(NA, max(color_by_median$IBU, na.rm=TRUE)+0.005)) +
+  scale_fill_gradient( labels = percent) +
+  labs(x="State", y="IBU") +
+  annotate("text", x=5, y=4, label = "<50 IBU = Malty", size=5, fontface = "bold", col="Red3") +
+  annotate("text", x=5, y=120, label = ">50 IBU = Hoppy", size=5, fontface = "bold", col = "Green4")
+
+
+
+
+#And we will find the count of brews by state
+(brews_count <- merged_beers %>%
+    group_by(State) %>%
+    count(State))
+
+
+###################
+## THIS CODE IS INCLUDED TO CREATE BAGPLOT FOR VISUALS
+## PURELY FOR EXPLORATORY DATA ANALYSIS AND POTENTIAL PRESENTATION
+###################
+StatBag <- ggproto("Statbag", Stat,
+                   compute_group = function(data, scales, prop = 0.5) {
+                     
+                     #################################
+                     #################################
+                     # originally from aplpack package, plotting functions removed
+                     plothulls_ <- function(x, y, fraction, n.hull = 1,
+                                            col.hull, lty.hull, lwd.hull, density=0, ...){
+                       # function for data peeling:
+                       # x,y : data
+                       # fraction.in.inner.hull : max percentage of points within the hull to be drawn
+                       # n.hull : number of hulls to be plotted (if there is no fractiion argument)
+                       # col.hull, lty.hull, lwd.hull : style of hull line
+                       # plotting bits have been removed, BM 160321
+                       # pw 130524
+                       if(ncol(x) == 2){ y <- x[,2]; x <- x[,1] }
+                       n <- length(x)
+                       if(!missing(fraction)) { # find special hull
+                         n.hull <- 1
+                         if(missing(col.hull)) col.hull <- 1
+                         if(missing(lty.hull)) lty.hull <- 1
+                         if(missing(lwd.hull)) lwd.hull <- 1
+                         x.old <- x; y.old <- y
+                         idx <- chull(x,y); x.hull <- x[idx]; y.hull <- y[idx]
+                         for( i in 1:(length(x)/3)){
+                           x <- x[-idx]; y <- y[-idx]
+                           if( (length(x)/n) < fraction ){
+                             return(cbind(x.hull,y.hull))
+                           }
+                           idx <- chull(x,y); x.hull <- x[idx]; y.hull <- y[idx];
+                         }
+                       }
+                       if(missing(col.hull)) col.hull <- 1:n.hull
+                       if(length(col.hull)) col.hull <- rep(col.hull,n.hull)
+                       if(missing(lty.hull)) lty.hull <- 1:n.hull
+                       if(length(lty.hull)) lty.hull <- rep(lty.hull,n.hull)
+                       if(missing(lwd.hull)) lwd.hull <- 1
+                       if(length(lwd.hull)) lwd.hull <- rep(lwd.hull,n.hull)
+                       result <- NULL
+                       for( i in 1:n.hull){
+                         idx <- chull(x,y); x.hull <- x[idx]; y.hull <- y[idx]
+                         result <- c(result, list( cbind(x.hull,y.hull) ))
+                         x <- x[-idx]; y <- y[-idx]
+                         if(0 == length(x)) return(result)
+                       }
+                       result
+                     } # end of definition of plothulls
+                     #################################
+                     
+                     
+                     # prepare data to go into function below
+                     the_matrix <- matrix(data = c(data$x, data$y), ncol = 2)
+                     
+                     # get data out of function as df with names
+                     setNames(data.frame(plothulls_(the_matrix, fraction = prop)), nm = c("x", "y"))
+                     # how can we get the hull and loop vertices passed on also?
+                   },
+                   
+                   required_aes = c("x", "y")
+)
+
+#' @inheritParams ggplot2::stat_identity
+#' @param prop Proportion of all the points to be included in the bag (default is 0.5)
+stat_bag <- function(mapping = NULL, data = NULL, geom = "polygon",
+                     position = "identity", na.rm = FALSE, show.legend = NA, 
+                     inherit.aes = TRUE, prop = 0.5, alpha = 0.3, ...) {
+  layer(
+    stat = StatBag, data = data, mapping = mapping, geom = geom, 
+    position = position, show.legend = show.legend, inherit.aes = inherit.aes,
+    params = list(na.rm = na.rm, prop = prop, alpha = alpha, ...)
+  )
+}
+
+
+geom_bag <- function(mapping = NULL, data = NULL,
+                     stat = "identity", position = "identity",
+                     prop = 0.5, 
+                     alpha = 0.3,
+                     ...,
+                     na.rm = FALSE,
+                     show.legend = NA,
+                     inherit.aes = TRUE) {
+  layer(
+    data = data,
+    mapping = mapping,
+    stat = StatBag,
+    geom = GeomBag,
+    position = position,
+    show.legend = show.legend,
+    inherit.aes = inherit.aes,
+    params = list(
+      na.rm = na.rm,
+      alpha = alpha,
+      prop = prop,
+      ...
+    )
+  )
+}
+
+#' @rdname ggplot2-ggproto
+#' @format NULL
+#' @usage NULL
+#' @export
+GeomBag <- ggproto("GeomBag", Geom,
+                   draw_group = function(data, panel_scales, coord) {
+                     n <- nrow(data)
+                     if (n == 1) return(zeroGrob())
+                     
+                     munched <- coord_munch(coord, data, panel_scales)
+                     # Sort by group to make sure that colors, fill, etc. come in same order
+                     munched <- munched[order(munched$group), ]
+                     
+                     # For gpar(), there is one entry per polygon (not one entry per point).
+                     # We'll pull the first value from each group, and assume all these values
+                     # are the same within each group.
+                     first_idx <- !duplicated(munched$group)
+                     first_rows <- munched[first_idx, ]
+                     
+                     ggplot2:::ggname("geom_bag",
+                                      grid:::polygonGrob(munched$x, munched$y, default.units = "native",
+                                                         id = munched$group,
+                                                         gp = grid::gpar(
+                                                           col = first_rows$colour,
+                                                           fill = alpha(first_rows$fill, first_rows$alpha),
+                                                           lwd = first_rows$size * .pt,
+                                                           lty = first_rows$linetype
+                                                         )
+                                      )
+                     )
+                     
+                     
+                   },
+                   
+                   default_aes = aes(colour = "NA", fill = "grey20", size = 0.5, linetype = 1,
+                                     alpha = NA, prop = 0.5),
+                   
+                   handle_na = function(data, params) {
+                     data
+                   },
+                   
+                   required_aes = c("x", "y"),
+                   
+                   draw_key = draw_key_polygon
+)
+
+
+
+
+#create a clean space to work
+bag_of_beers <- merged_beers
+
+#find styles
+bag_of_beers$Style <- str_trim(bag_of_beers$Style)
+bag_of_beers$Style <- str_replace_all(bag_of_beers$Style, "[[:punct:]]", "")
+
+
+style_counts<- bag_of_beers %>%
+  group_by(Style) %>%
+  count
+
+style_counts<-style_counts[order(-style_counts$n), ]
+
+
+#Find Quartiles
+bag_of_beers_summary <- summary(bag_of_beers$ABV)
+ABV_Q1 <- bag_of_beers_summary[2]
+ABV_Q2 <- bag_of_beers_summary[3]
+ABV_Q3 <- bag_of_beers_summary[5]
+
+bag_of_beers_summary <- summary(bag_of_beers$IBU)
+IBU_Q1 <- bag_of_beers_summary[2]
+IBU_Q2 <- bag_of_beers_summary[3]
+IBU_Q3 <- bag_of_beers_summary[5]
+
+#find top styles
+STYLE_1 <- as.character(style_counts[1,1])
+STYLE_2 <- as.character(style_counts[2,1])
+STYLE_3 <- as.character(style_counts[3,1])
+
+STYLE_1 <- str_replace_all(STYLE_1, "[[:punct:]]", "")
+STYLE_2 <- str_replace_all(STYLE_2, "[[:punct:]]", "")
+STYLE_3 <- str_replace_all(STYLE_3, "[[:punct:]]", "")
+
+bag_of_beers$IBU_class <- ifelse(bag_of_beers$IBU<=IBU_Q1, "< 1st Quartile", 
+                                 ifelse(bag_of_beers$IBU>IBU_Q1 & bag_of_beers$IBU<=IBU_Q2, "< 2nd Quartile (Median)",
+                                        ifelse(bag_of_beers$IBU>IBU_Q2 & bag_of_beers$IBU<=IBU_Q3, "< 3rd Quartile", 
+                                               ifelse(bag_of_beers$IBU>IBU_Q3, "> 3rd Quartile", "none"))))
+
+bag_of_beers$ABV_class <-  ifelse(bag_of_beers$ABV<=ABV_Q1, "< 1st Quartile", 
+                                  ifelse(bag_of_beers$ABV>ABV_Q1 & bag_of_beers$ABV<=ABV_Q2, "< 2nd Quartile (Median)",
+                                         ifelse(bag_of_beers$ABV>ABV_Q2 & bag_of_beers$ABV<=ABV_Q3, "< 3rd Quartile", 
+                                                ifelse(bag_of_beers$ABV>ABV_Q3 & bag_of_beers$ABV<=1, "> 3rd Quartile", "None"))))
+
+bag_of_beers$Style_class <- ifelse(str_detect(bag_of_beers$Style,STYLE_1)==TRUE, STYLE_1, 
+                                 ifelse(str_detect(bag_of_beers$Style,STYLE_2)==TRUE, STYLE_2,
+                                        ifelse(str_detect(bag_of_beers$Style, STYLE_3)==TRUE, STYLE_3, NA)))
+                                              
+#find style medians for ABV and IBU
+style_medians <- merged_beers %>%
+    group_by(Style) %>%
+    summarise(MedianABV = median(ABV, na.rm = TRUE), MedianIBU = median(IBU, na.rm = TRUE))
+
+style_medians <- left_join(style_medians, style_counts, by = c("Style" = "Style"))
+#bag_of_beers <- left_join(bag_of_beers, style_medians, by = c("Style" = "Style"))
+
+
+#CREATE BAGPLOTS
+ggplot(data=bag_of_beers, aes(x=IBU, y=ABV, fill=ABV_class)) +
+  geom_point() + 
+  stat_bag(prop = 0.95) +  # enclose 95% of points
+  stat_bag(prop = 0.5, alpha = 0.5) + # enclose 50% of points
+  stat_bag(prop = 0.05, alpha = 0.9) + # enclose 5% of points
+  ggtitle("ABV Class Groups") +
+  theme(plot.title = element_text(hjust = 0.5)) 
+
+ggplot(data=bag_of_beers, aes(x=IBU, y=ABV, fill=IBU_class)) +
+  geom_point() + 
+  stat_bag(prop = 0.95) +  # enclose 95% of points
+  stat_bag(prop = 0.5, alpha = 0.5) + # enclose 50% of points
+  stat_bag(prop = 0.05, alpha = 0.9) + # enclose 5% of points
+  ggtitle("IBU Class Groups") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+ggplot(data=subset(bag_of_beers, !is.na(Style_class)), aes(x=IBU, y=ABV, fill=Style_class)) +
+  geom_point() + 
+  stat_bag(prop = 0.95) +  # enclose 95% of points
+  stat_bag(prop = 0.5, alpha = 0.5) + # enclose 50% of points
+  stat_bag(prop = 0.05, alpha = 0.9) + # enclose 5% of points
+  ggtitle("Top 3 Most Popular Style Class Groups") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  guides(fill = guide_legend(title = "Top 3 Styles"))
+
+
+
+#plot of ABV vs IBU for the Top x Styles
+
+#choose x
+num_rows<-5
+
+ggplot(data=head(style_medians[order(-style_medians$n),],num_rows), 
+       aes(x=MedianIBU, y=MedianABV, size=n, fill=Style, label = Style)) +
+  geom_jitter(shape = 21)  +
+ geom_text(aes(label=head(style_medians[order(-style_medians$n),],num_rows)$n), size=5
+           , position = position_dodge(width=0), vjust = -1, hjust= 0
+           #, position = position_nudge(y = 0.0015)
+           ) +
+  ggtitle(paste0("ABV vs IBU for the Top ", num_rows," Most Popular Styles"))+
+  theme(plot.title = element_text(hjust = 1)) +
+  scale_y_continuous(labels = scales::percent, limits = c(NA, max(style_medians$MedianABV)+0.005)) +
+  theme(plot.title = element_text(hjust = 0.5, size = 15, face="bold")) +
+  theme(axis.text = element_text(size=15), axis.title=element_text(size=15,face="bold")) +
+  labs(x = "Median IBU", y="Median ABV") +
+  labs(caption = "Bubble size represents most popularly represented styles by number of beers in the provided data.") +
+  scale_size_continuous(range=c(1, 30)) +
+  scale_colour_continuous(guide = FALSE) +
+  guides(fill = guide_legend(title = "Beer Style"))
+
+
+#choose x
+num_rows<-10
+
+ggplot(data=head(style_medians[order(-style_medians$n),],num_rows), 
+       aes(x=MedianIBU, y=MedianABV, size=n, fill=Style, label = Style)) +
+  geom_jitter(shape = 21)  +
+  geom_text(aes(label=head(style_medians[order(-style_medians$n),],num_rows)$n), size=5
+            , position = position_dodge(width=0), vjust = -0.5, hjust= 0.1
+            #, position = position_nudge(y = 0.0015)
+  ) +
+  ggtitle(paste0("ABV vs IBU for the Top ", num_rows," Most Popular Styles"))+
+  theme(plot.title = element_text(hjust = 1)) +
+  scale_y_continuous(labels = scales::percent, limits = c(NA, max(style_medians$MedianABV)+0.005)) +
+  theme(plot.title = element_text(hjust = 0.5, size = 15, face="bold")) +
+  theme(axis.text = element_text(size=15), axis.title=element_text(size=15,face="bold")) +
+  labs(x = "Median IBU", y="Median ABV") +
+  labs(caption = "Bubble size represents most popularly represented styles by number of beers in the provided data.") +
+  scale_size_continuous(range=c(1, 30)) +
+  scale_colour_continuous(guide = FALSE) +
+  guides(fill = guide_legend(title = "Beer Style"))
+
+#choose x
+num_rows<-5
+
+ggplot(data=head(style_medians[order(-style_medians$n),],num_rows), 
+       aes(x=MedianIBU, y=MedianABV, size=n, fill=Style, label = Style)) +
+  geom_jitter(shape = 21)  +
+  geom_text(aes(label=str_remove(head(style_medians[order(-style_medians$n),],num_rows)$Style, "American ")), size=5
+            , position = position_dodge(width=0), vjust = -.06, hjust= 0
+            #, position = position_nudge(y = 0.0015)
+  ) +
+  ggtitle(paste0("ABV vs IBU for the Top ", num_rows," Most Popular Styles"))+
+  theme(plot.title = element_text(hjust = 1)) +
+  scale_y_continuous(labels = scales::percent, limits = c(NA, max(style_medians$MedianABV)+0.005)) +
+  theme(plot.title = element_text(hjust = 0.5, size = 15, face="bold")) +
+  theme(axis.text = element_text(size=15), axis.title=element_text(size=15,face="bold")) +
+  labs(x = "Median IBU", y="Median ABV") +
+  labs(caption = "Bubble size represents most popularly represented styles by number of beers in the provided data.") +
+  scale_size_continuous(range=c(1, 30)) +
+  scale_colour_continuous(guide = FALSE) +
+  guides(fill = guide_legend(title = "Beer Style"))
+
+
+##################
+```
+
+```{r, eda, fig.width = 14, fig.height= 14, message=F, warning=F}
+
+#Plot facets to view by state
+#this might be helpful to view gaps in market or saturation
+ggplot(data = merged_beers) +
+  geom_jitter(mapping = aes(x=ABV, y=IBU)) +
+  facet_wrap(~ State, nrow = 13)
+
+```
+
+```{r, question3-answer, fig.width = 14, fig.height= 6, message=F, warning=F}
+#Finally, lets print first 6 lines and last six lines 
+#so we can answer the question directly
+kable(head(merged_beers, 6))
+kable(tail(merged_beers, 6))
+```
+
+***
+
+***
+
+# Hopsy Question 2
+## Please merge the data sets provided (beers & breweries).
+
+As requested, the R Mustangs team merged the data sets provided. Although we found some gaps in the data, we were successful in pulling all data together for analysis.
+
+Displayed above are various Exploratory Data Analysis (EDA) techniqiues we employed on the data to validate and understand what has been provided. Directly above, the first and last 6 lines of the merged dataset is provided for reference and understanding.
+
+***
+
+***
+```{r, question3, fig.width = 14, fig.height= 6, message=F, warning=F}
+#Question 3 - We will find out how many NAs are in each column for the merged dataset, 
+#so we can report it
+kable(colSums(is.na(merged_beers)))
+missing_values <- colSums(is.na(merged_beers))
+missing_values <- as.data.frame(missing_values)
+
+names(missing_values)[1] <- "MissingValues"
+missing_values<-missing_values %>% rownames_to_column("Variable")
+
+
+ggplot(data = missing_values, aes(x=Variable, y=MissingValues, fill=MissingValues)) +
+  geom_bar(stat = "identity", colour="black") + 
+  geom_text(aes(label=MissingValues, size=5, vjust = -0.5, hjust= 0.5), show.legend = FALSE) +
+  ggtitle("Missing Values") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  labs(x="Variables", y="MIssing Values") +
+  guides(fill = guide_legend(title = "Dataset Missing Values")) +
+  theme(plot.title = element_text(hjust = 0.5, face="bold")) +
+  theme(axis.title=element_text(face="bold"))
+
+
+```
+
+***
+
+***
+
+# Hopsy Question 3
+## Report on Missing Values
+
+Shown above is a "Missing Values" report that shows where we have gaps in the existing data. While not ideal, we can still proceed with analysis and proceed with caution under this understanding. For the future, we would recommend review on data quality procedures in order to ensure the lineage and sanctity of the data sets wherever possible. 
+
+***
+
+***
+
+```{r, question4, fig.width = 14, fig.height= 6, message=F, warning=F}
+#Question 4 - We will compute the median alcohol content and international bitterness unit by state
+#then plot the results
+(medians <- merged_beers %>%
+    group_by(State) %>%
+    summarise(MedianABV = median(ABV, na.rm = TRUE), MedianIBU = median(IBU, na.rm = TRUE)))
+
+#Plot ABV graph
+#Show ggplot. Center title, with axis titles
+ggplot(data = medians, aes(x=medians$State, y=medians$MedianABV, fill=medians$MedianABV)) +
+  geom_bar(stat = "identity", colour="black") + 
+  scale_fill_gradient2(labels = percent, midpoint=median(medians$MedianABV, na.rm = TRUE),low='#deebf7', mid='#9ecae1', high='#3182bd', space='Lab', aesthetics = "fill") +
+  scale_y_continuous(labels = scales::percent, limits = c(NA, max(medians$MedianABV)+0.005)) +
+  ##sec.axis = sec_axis(~. * 25, name = "MedianIBU") +
+  ggtitle("Median ABV By State") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  labs(x="State", y="Median ABV in %") +
+  guides(fill = guide_legend(title = "Median ABV")) +
+  theme(plot.title = element_text(hjust = 0.5, face="bold")) +
+  theme(axis.title=element_text(face="bold")) 
+
+#Plot ABV sort graph
+#Show ggplot. Center title, with axis titles
+ggplot(data = medians, aes(x=reorder(medians$State, medians$MedianABV), y=medians$MedianABV, fill=medians$MedianABV)) +
+  geom_bar(stat = "identity", colour="black") + 
+  scale_fill_gradient2(labels = percent, midpoint=median(medians$MedianABV, na.rm = TRUE),low='#deebf7', mid='#9ecae1', high='#3182bd', space='Lab', aesthetics = "fill") +
+  scale_y_continuous(labels = scales::percent, limits = c(NA, max(medians$MedianABV)+0.005)) +
+  ##sec.axis = sec_axis(~. * 25, name = "MedianIBU") +
+  ggtitle("Median ABV By State") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  labs(x="State", y="Median ABV in %") +
+  guides(fill = guide_legend(title = "Median ABV")) +
+  theme(plot.title = element_text(hjust = 0.5, face="bold")) +
+  theme(axis.title=element_text(face="bold")) 
+
+
+#Set chart title for mean
+mean_ABV <- paste0("ABV Histogram: Mean = ",round(mean(merged_beers$ABV, na.rm = TRUE), digits = 3)*100, "%")
+
+#Show Histogram to show distribution of values for ABV
+ggplot(data=merged_beers, aes(merged_beers$ABV, fill=..count..)) + 
+  geom_histogram(binwidth = .005) +
+  geom_vline(aes(xintercept = mean(merged_beers$ABV, na.rm = TRUE)),col='black', size=2) +
+  labs(x="ABV", y="Frequency") +
+  guides(fill = guide_legend(title = "ABV Frequency")) +
+  ggtitle(mean_ABV) +
+  theme(plot.title = element_text(hjust = 0.5, size = 15, face="bold")) +
+  theme(axis.text = element_text(size=15), axis.title=element_text(size=15,face="bold"))
+
+#Plot IBU graph
+ggplot(data = medians, aes(x=medians$State, y=medians$MedianIBU, fill=medians$MedianIBU)) +
+  geom_bar(stat = "identity", colour="black") + 
+  scale_fill_gradient2(midpoint=median(medians$MedianIBU, na.rm = TRUE),low='#deebf7', mid='#9ecae1', high='#3182bd', space='Lab', aesthetics = "fill") +
+  scale_y_continuous(limits = c(NA, max(medians$MedianIBU)+0.005)) +
+  ggtitle("Median IBU By State") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  labs(x="State", y="Median IBU") +
+  guides(fill = guide_legend(title = "Median IBU")) +
+  theme(plot.title = element_text(hjust = 0.5, face="bold")) +
+  theme(axis.title=element_text(face="bold"))
+
+#Plot IBU sort graph
+ggplot(data = medians, aes(x=reorder(medians$State, medians$MedianIBU), y=medians$MedianIBU, fill=medians$MedianIBU)) +
+  geom_bar(stat = "identity", colour="black") + 
+  scale_fill_gradient2(midpoint=median(medians$MedianIBU, na.rm = TRUE),low='#deebf7', mid='#9ecae1', high='#3182bd', space='Lab', aesthetics = "fill") +
+  scale_y_continuous(limits = c(NA, max(medians$MedianIBU)+0.005)) +
+  ggtitle("Median IBU By State") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  labs(x="State", y="Median IBU") +
+  guides(fill = guide_legend(title = "Median IBU")) +
+  theme(plot.title = element_text(hjust = 0.5, face="bold")) +
+  theme(axis.title=element_text(face="bold"))
+
+#Plot IBU sort graph
+#Draw a line at 50 so we can determine High Versus Low
+ggplot(data = medians, aes(x=reorder(medians$State, medians$MedianIBU), y=medians$MedianIBU, fill=medians$MedianIBU)) +
+  geom_bar(stat = "identity", colour="black") + 
+  geom_abline(intercept = 50, slope = 0, na.rm=TRUE, linetype="dashed", size=1.5, col = "Red3") + 
+  scale_fill_gradient2(midpoint=median(medians$MedianIBU, na.rm = TRUE),low='#deebf7', mid='#9ecae1', high='#3182bd', space='Lab', aesthetics = "fill") +
+  scale_y_continuous(limits = c(NA, max(medians$MedianIBU)+0.005)) +
+  ggtitle("Median IBU By State") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  labs(x="State", y="Median IBU") +
+  guides(fill = guide_legend(title = "Median IBU")) +
+  theme(plot.title = element_text(hjust = 0.5, face="bold")) +
+  theme(axis.title=element_text(face="bold")) +
+  annotate("text", x=5, y=30, label = "<50 IBU = Malty", size=5, fontface = "bold", col="Red3") +
+  annotate("text", x=5, y=80, label = ">50 IBU = Hoppy", size=5, fontface = "bold", col = "Green4")
+
+#Set chart title for mean
+mean_IBU <- paste0("IBU Histogram: Mean = ",round(mean(merged_beers$IBU, na.rm = TRUE), digits = 0))
+
+#Show Histogram to show distribution of values for IBU
+ggplot(data=merged_beers, aes(merged_beers$IBU, fill=..count..)) + 
+  geom_histogram(binwidth = 5) +
+  geom_vline(aes(xintercept = mean(merged_beers$IBU, na.rm = TRUE)),col='black',size=2) +
+  theme(plot.title = element_text(hjust = 0.5, size = 15, face="bold")) +
+  theme(axis.text = element_text(size=15), axis.title=element_text(size=15,face="bold")) +
+  labs(x="IBU Frequency", y="Frequency") +
+  guides(fill = guide_legend(title = "IBU")) +
+  ggtitle(mean_IBU) +
+  theme(plot.title = element_text(hjust = 0.5, size = 15, face="bold")) +
+  theme(axis.text = element_text(size=15), axis.title=element_text(size=15,face="bold"))
+
+
+
+```
+
+***
+
+***
+
+# Question 4
+## Compute the Median Alcohol content (ABV) and International Bitterness Unit (IBU) for each state. 
+## Display graphically.
+
+Displayed above are various graphs of both ABV and IBU as they relate to the United States. Please note the sorted graphs are the most informative for this exercise as they will help distinguish which states have what types of preferences for their locality. Alcohol content and bitterness preference vary in terms of regional tastes. 
+
+***
+
+***
+```{r, question5, fig.width = 14, fig.height= 6, message=F, warning=F}
+#Question 5 - Which state has the maximum alcoholic (ABV) beer? Which state has the most bitter (IBU) beer?
+
+#Lets find out explictly which state has the highest ABV and IBU
+#We will answer this with explicit data pulls below, plus graphically with existing charts
+
+#State with max ABV
+kable(merged_beers %>%
+  filter(ABV == max(ABV, na.rm=TRUE)))
+
+#Top 5 with max absolute ABV
+kable(head(merged_beers[order(-merged_beers$ABV),], 5))
+
+
+#State with max IBU
+merged_beers %>%
+  filter(IBU == max(IBU, na.rm=TRUE))
+
+#Top 5 with max absolute IBU
+kable(head(merged_beers[order(-merged_beers$IBU),], 5))
+
+# MAX MEDIAN ABV STATES
+kable(head(medians[order(-medians$MedianABV),], 5))
+
+# MAX MEDIAN IBU STATES
+kable(head(medians[order(-medians$MedianIBU),], 5))
+
+```
+
+***
+
+***
+
+# Question 5 
+## Which state has the maximum alcoholic (ABV) beer? 
+## Which state has the most bitter (IBU) beer?
+
+The maximum alcohol content (ABV) beer is a beer from Colorado named the Lee Hill Series Vol 5 - Belgian Style Quadrupel Ale, from a brewer named Upslope Breweing Company. This beer has an ABV of 12.8%, which represents an outlier in terms of the overall sample of craft beers we reviewed. 
+
+The maximum bitterness (IBU) beer is a beer from Oregon named the Bitter Bitch Imperial IPA, from a brewer by the name of Astoria Brewing Company. Their reported IBU for that beer is 138, which also represents a very high number. This also may represent suspect data as the IBU rating is a rating that measures the amount of isomerized alpha acids in a beer. Humans can only detect up to 100, which is why typically IBU is reported on a 0 to 100 scale. We merely recommend keeping this in mind for the upper echelons of IBU.
+
+There is nothing particularly wrong the reported 138 IBU as its still representative of hops alpha acids for the beer. However, for future research we need to keep in mind the upper bound of 100 for taste preferences. Its still correct to report 138 IBU as it relates to alcohol content as we will see later in the analysis. 
+
+For comprehensiveness we also find above the max Median ABV and max Median IBU states as well. District of Columbia and Kentucky are the maximum Median ABV territory and State (6.25% Alcohol), and Maine is the maximum Median IBU State (61 IBU), followed by West Virgina (57 IBU). This is also displayed above in tabular form. 
+
+***
+
+***
+```{r, question6, fig.width = 14, fig.height= 6, message=F, warning=F}
+#Question 6 - We will aggregate summary statistics for ABV
+#Summary for ABV Stats
+
+kable(as.array(summary(merged_beers$ABV)))
+describe(merged_beers$ABV)
+kable(stat.desc(merged_beers$ABV))
+
+#We will do IBU for good measure
+kable(as.array(summary(merged_beers$IBU)))
+describe(merged_beers$IBU)
+kable(stat.desc(merged_beers$IBU))
+```
+
+***
+
+***
+
+# Question 6 
+## Summary Statistics for ABV
+
+Summary and descritive statistics we aggregated for both ABV and IBU. This is covered in detail in our presentation, and is displayed above. This data, in combination with the histgrams generated, cover the full shape and behavior of the data provided. 
+
+***
+
+***
+```{r, question7, fig.width = 14, fig.height= 6, message=F, warning=F}
+#Question 7 - There seems to be a linear relation to ABV and IBU. We will draw a scatter plot
+#Plus, we will find the linear regression line fit so we can predict missing values
+reg<-lm(ABV ~ IBU, data = merged_beers)
+reg
+
+(r_squared<-summary(lm(ABV~IBU, merged_beers))$r.squared)
+
+
+# Equation of the line : 
+coeff=coefficients(reg)
+eq = paste0("y = ", round(reg$coefficients[2],5)*100, "*x + ", reg$coefficients[1]*100,1)
+
+scatter_title <- paste0("IBU vs ABV Relationship", "\n\n", eq)
+
+#Asside: to find values where we have IBU but do not have ABV
+predicted_values_IBU <- merged_beers %>%
+  filter(is.na(merged_beers$ABV) == FALSE, is.na(merged_beers$IBU) == TRUE) 
+
+predicted_values_IBU$IBU <- ifelse((predicted_values_IBU$ABV-reg$coefficients[1])/reg$coefficients[2]>0, 
+                                   (predicted_values_IBU$ABV-reg$coefficients[1])/reg$coefficients[2], 
+                                   NA)
+
+#Plot scatter plot of ABV vs IBU, with prediected values
+ggplot(data=merged_beers, aes(x=IBU, y=ABV, color=State)) +
+  geom_jitter() +
+  geom_abline(intercept = reg$coefficients[1], slope = reg$coefficients[2], na.rm=TRUE, linetype="dashed") + 
+  ggtitle(eq) +
+  theme(plot.title = element_text(hjust = 1)) +
+  scale_y_continuous(labels = scales::percent, limits = c(NA, max(merged_beers$ABV)+0.005)) +
+  ggtitle(scatter_title) +
+  theme(plot.title = element_text(hjust = 0.5, size = 15, face="bold")) +
+  theme(axis.text = element_text(size=15), axis.title=element_text(size=15,face="bold")) +
+  geom_point(data = predicted_values_IBU, 
+             mapping = aes(x = IBU, y = ABV, shape=State), 
+             shape = 0, 
+             size =4,
+             show.legend=TRUE) +
+  labs(caption = "Square datapoints represent predicted calculated values where they were missing.")
+
+
+```
+
+***
+
+***
+
+# Question 7 
+## Is there an apparent relationship between the bitterness of the beer and its alcoholic content? 
+## Draw a scatter plot.
+
+As shown above, there does seem to be a linear relationship to ABV and IBU, as mentioned earlier. Utilizing a linear regression we found the relation with an R Squared = 0.4497332. This says that the fit only explains 45% of the variability around the mean. 
+
+Our conclusion based on this cursory analysis is that IBU is an ok proxy for predicting Alcohol content, however it does not predict a preponderance of the cases precisely. 
+
+***
+
+***
+
+```{r, extra, fig.width = 14, fig.height= 6, message=F, warning=F}
+#####################################
+## THIS IS EXTRA ANALYSIS TO CONSIDER FOR PRESENTATION AND CASE
+#####################################
+## IN ORDER TO ROUND OUT THE DISCUSSION FURTHER DATA WAS PULLED
+## IN TO ENRICH THE PROVIDED DATASETS
+## WE UTILIZE BOTH ALCOHOL CONSUMPTION DATA FROM OPEN ICPSR
+## AS WELL AS US CENSUS BUREAU DATA
+#####################################
+# https://www.openicpsr.org/openicpsr/project/105583/version/V2/view;jsessionid=843DFC2FBDC320D1624BF92319E643FA?path=/openicpsr/105583/fcr:versions/V2/apparent_per_capita_alcohol_consumption.csv&type
+##
+##https://www2.census.gov/programs-surveys/popproj/datasets/2017/2017-popproj/np2017_d1.csv
+#####################################
+
+
+#Asside: to find na values for style
+merged_beers %>%
+  filter(is.na(merged_beers$Style) == TRUE)
+
+
+
+
+#####################################
+## CREATE MEDIAN ABV MAPPING
+#####################################
+
+#rename column in plot_beers for simplicity for mapping
+plot_beers <- as_tibble(medians)
+plot_beers <- rename(plot_beers, abbr=State)
+plot_beers <- left_join(plot_beers, statepop, by = c("abbr" = "abbr"))
+#fill in missing values NA=0
+#plot_beers[is.na(plot_beers)] <- 0 #<-----Uncomment to place zeros on IBU clorograph
+#create a percent column for ABV
+plot_beers$ABV_Percent <- plot_beers$MedianABV*100
+
+
+
+#lets make a map
+usa <- map_data("usa")
+w2hr <- map_data("world2Hires")
+states <- map_data("state")
+
+
+
+#create cap function
+simpleCap <- function(x) {
+  s <- strsplit(x, " ")[[1]]
+  paste(toupper(substring(s, 1,1)), substring(s, 2),
+        sep="", collapse=" ")
+}
+
+#import states
+states$region<-sapply(states$region, simpleCap)
+#join for lats and longs
+plot_beers_states <- as_tibble(inner_join(states, plot_beers, by=c("region" = "full")))
+
+#find centroid of state
+mean_geo <- as_tibble(plot_beers_states %>%
+  group_by(region) %>%
+  summarise(lat=mean(c(max(lat), min(lat))), long=mean(c(max(long), min(long)))))
+
+
+#joins centroids to original data
+plot_beers <-inner_join(plot_beers, mean_geo, by=c("full" = "region"))
+
+
+#add offsets so I can adjust labeling on the map
+plot_beers$offset <- ifelse(plot_beers$full %in% c("New Hampshire",
+                                                   #"Vermont", 
+                                                   "Massachusetts", 
+                                                   "Rhode Island",
+                                                   "New York",
+                                                   "New Jersey",
+                                                   "Delaware"), 1, 0)
+
+
+#add in brewer counts
+plot_beers <- inner_join(plot_beers, breweries_count, by=c("abbr" = "State"))
+names(plot_beers)[11] <- "count_breweries"
+
+#add in brew counts
+plot_beers <- inner_join(plot_beers, brews_count, by=c("abbr" = "State"))
+names(plot_beers)[12] <- "count_brews"
+
+
+
+#create a base map
+us_base <- ggplot(data = plot_beers_states) + 
+  geom_polygon(aes(x = long, y = lat, group = group), color = "white") + 
+  coord_fixed(1.3) #+
+
+#cut out the fluff so I can add it back piece by piece
+ditch_the_axes <- theme(
+  axis.text = element_blank(),
+  axis.line = element_blank(),
+  axis.ticks = element_blank(),
+  panel.border = element_blank(),
+  panel.grid = element_blank(),
+  axis.title = element_blank()
+)
+
+#####################################
+## MAP ABV 
+#####################################
+#create Median % ABV Map
+p <- us_base +
+  geom_polygon(aes(x = long, y = lat, group = group, fill = MedianABV), color = "white") +
+  scale_fill_gradient(low='#d7edfe', high='#23619f', labels = scales::percent) +
+  geom_polygon(aes(x = long, y = lat, group = group), color = "white", fill = NA) +
+  theme_bw() +
+  ditch_the_axes +
+  geom_text(data=subset(plot_beers, offset==0), aes(x = long, y = lat, label = paste(as.character(MedianABV*100), "%")), color="black")+
+  geom_text_repel(data=subset(plot_beers, offset==1), aes(x = long, y = lat, label = paste(as.character(MedianABV*100), "%")), 
+                  box.padding = unit(0.4, "lines"),
+                  point.padding = unit(0.2, "lines"),
+                  direction="x", 
+                  nudge_x = 0.7) +
+  labs(title = "Median Percent ABV By State") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  guides(fill = guide_legend(title = "Percent ABV"))
+                  
+p
+
+
+#####################################
+## CREATE MEDIAN IBU MAPPING
+#####################################
+#added code here to modify NA labels to "No Data" for clarity
+p <- us_base +
+  geom_polygon(aes(x = long, y = lat, group = group, fill = MedianIBU), color = "white") +
+  scale_fill_gradient(low='#d7edfe', high='#23619f', na.value="white")+
+  geom_polygon(aes(x = long, y = lat, group = group), color = "white", fill = NA) +
+  theme_bw() +
+  ditch_the_axes +
+  geom_text(data=subset(plot_beers, offset==0), aes(x = long, y = lat, label = paste(as.character(ifelse(is.na(MedianIBU)==TRUE, "No Data", MedianIBU)))), color="black") +
+  geom_text_repel(data=subset(plot_beers, offset==1), aes(x = long, y = lat, label = paste(as.character(MedianIBU))), 
+                  box.padding = unit(0.4, "lines"),
+                  point.padding = unit(0.2, "lines"),
+                  direction="x", 
+                  nudge_x = 0.7) +
+  labs(title = "Median IBU By State") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  guides(fill = guide_legend(title = "IBU"))
+
+p
+
+
+#####################################
+## CREATE BREWERY MAPPING
+#####################################
+
+#join for lats and longs
+plot_beers_states <- as_tibble(inner_join(states, plot_beers[,c(5,11)], by=c("region" = "full")))
+
+#create a base map
+us_base <- ggplot(data = plot_beers_states) + 
+  geom_polygon(aes(x = long, y = lat, group = group), color = "white") + 
+  coord_fixed(1.3) #+
+
+p <- us_base +
+  geom_polygon(aes(x = long, y = lat, group = group, fill = count_breweries), color = "white") +
+  scale_fill_gradient(low='#d7edfe', high='#23619f', na.value="white")+
+  geom_polygon(aes(x = long, y = lat, group = group), color = "white", fill = NA) +
+  theme_bw() +
+  ditch_the_axes +
+  geom_text(data=subset(plot_beers, offset==0), aes(x = long, y = lat, label = paste(as.character(count_breweries))), color="black")+
+  geom_text_repel(data=subset(plot_beers, offset==1), aes(x = long, y = lat, label = paste(as.character(count_breweries))), 
+                  box.padding = unit(0.4, "lines"),
+                  point.padding = unit(0.2, "lines"),
+                  direction="x", 
+                  nudge_x = 0.7) +
+  labs(title = "Breweries By State") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  guides(fill = guide_legend(title = "Breweries"))
+
+p
+
+
+#####################################
+## CREATE BREWS MAPPING
+#####################################
+
+#join for lats and longs
+plot_beers_states <- as_tibble(inner_join(states, plot_beers[,c(5,12)], by=c("region" = "full")))
+
+#create a base map
+us_base <- ggplot(data = plot_beers_states) + 
+  geom_polygon(aes(x = long, y = lat, group = group), color = "white") + 
+  coord_fixed(1.3) #+
+
+p <- us_base +
+  geom_polygon(aes(x = long, y = lat, group = group, fill = count_brews), color = "white") +
+  scale_fill_gradient(low='#d7edfe', high='#23619f', na.value="white")+
+  geom_polygon(aes(x = long, y = lat, group = group), color = "white", fill = NA) +
+  theme_bw() +
+  ditch_the_axes +
+  geom_text(data=subset(plot_beers, offset==0), aes(x = long, y = lat, label = paste(as.character(count_brews))), color="black")+
+  geom_text_repel(data=subset(plot_beers, offset==1), aes(x = long, y = lat, label = paste(as.character(count_brews))), 
+                  box.padding = unit(0.4, "lines"),
+                  point.padding = unit(0.2, "lines"),
+                  direction="x", 
+                  nudge_x = 0.7) +
+  labs(title = "Craft Beers By State") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  guides(fill = guide_legend(title = "Craft Beers"))
+
+p
+
+#####################################
+## IMPORT CENSUS DATA & CONSUMPTION
+#####################################
+
+
+#setwd("/Users/chandlervaughn/Dropbox/4. Chandler/Development/git_repositories/r_mustangs/Case1")
+setwd(root_dir)
+
+#lets get population information for 201x from US Census
+
+if(!file.exists("Data/population.csv")){
+  res <- tryCatch(download.file(url="https://www2.census.gov/programs-surveys/popest/datasets/2010-2018/national/totals/nst-est2018-popchg2010_2018.csv", 
+                                destfile="Data/population.csv", 
+                                method="libcurl"), 
+                  error=function(e) 1)
+}
+
+#download.file(url="https://www2.census.gov/programs-surveys/popest/datasets/2010-2018/national/totals/nst-est2018-popchg2010_2018.csv", destfile="Data/population.csv", method="libcurl")
+
+population <- read_csv("Data/population.csv")
+
+#download.file(url="https://www2.census.gov/programs-surveys/popest/datasets/2010-2018/national/totals/nst-est2018-popchg2010_2018.csv", destfile="Data/population.csv", method="libcurl")
+
+population <- read_csv("Data/population.csv")
+
+
+
+#fix State Capitalization
+population$NAME<-sapply(population$NAME, simpleCap)
+#fix DC
+population$NAME<-ifelse(population$NAME =="District of Columbia", "DC", population$NAME)
+#remove unneeded data
+remove <- with(population, (NAME == "Northeast Region") | (NAME == "Midwest Region") | (NAME == "South Region") | (NAME == "West Region") | (NAME == "United States") | (NAME == "Puerto Rico") )
+population<-population[!remove,]
+
+
+
+#lets get consumption data for 2016 - pre downloaded from authorized site 
+#@misc{openICPS65:online,
+#howpublished = {\url{https://www.openicpsr.org/openicpsr/project/105583/version/V2/download/terms?path=/openicpsr/105583/fcr:versions/V2&type=project}},
+#note = {(Accessed on 02/19/2019)}
+#}
+
+consumption <- read_csv("Data/apparent_per_capita_alcohol_consumption.csv", 
+                        col_type =  cols(
+                          state = col_character(),
+                          year = col_double(),
+                          ethanol_beer_gallons_per_capita = col_double(),
+                          ethanol_wine_gallons_per_capita = col_double(),
+                          ethanol_spirit_gallons_per_capita = col_double(),
+                          ethanol_all_drinks_gallons_per_capita = col_double(),
+                          number_of_beers = col_double(),
+                          number_of_glasses_wine = col_double(),
+                          number_of_shots_liquor = col_double(),
+                          number_of_drinks_total = col_double()
+                        )
+                        )
+
+#fix State Capitalization
+consumption$state<-sapply(consumption$state, simpleCap)
+#fix DC
+consumption$state<-ifelse(consumption$state =="District Of Columbia", "DC", consumption$state)
+#remove unneeded data
+remove <- with(consumption, (state == "Northeast Region") | (state == "Midwest Region") | (state == "South Region") | (state == "West Region") | (state == "Us Total")  )
+consumption<-consumption[!remove,]
+#find 2016
+consump_2016<-filter(consumption, near(year,2016))
+  
+#lets pull in population by state
+consump_2016<-inner_join(consump_2016, population, by=c("state"="NAME"))
+
+gallons_beer_by_state <- consump_2016 %>%
+  group_by(state) %>%
+  summarise(gallons_beer = ethanol_beer_gallons_per_capita*POPESTIMATE2016)#, beer_per_capita=ethanol_beer_gallons_per_capita)
+
+
+#add in gallons counts
+plot_beers <- inner_join(plot_beers, gallons_beer_by_state, by=c("full" = "state"))
+#names(plot_beers)[13] <- "gallons_beer"
+
+#plot_beers <- inner_join(plot_beers, gallons_beer_by_state, by=c("full" = "state"))
+#names(plot_beers)[13] <- "gallons_beer"
+
+#add in population and per capita 
+#join for lats and longs
+plot_beers <- inner_join(plot_beers, consump_2016[,c(1,3,22)], by=c("full" = "state"))
+names(plot_beers)[14] <- "gallons_beer_per_capita"
+names(plot_beers)[15] <- "population_2016"
+
+
+
+#####################################
+## CREATE Gallons MAPPING
+#####################################
+
+#join for lats and longs
+plot_beers_states <- as_tibble(inner_join(states, plot_beers[,c(5,13)], by=c("region" = "full")))
+
+#create a base map
+us_base <- ggplot(data = plot_beers_states) + 
+  geom_polygon(aes(x = long, y = lat, group = group), color = "white") + 
+  coord_fixed(1.3) #+
+
+p <- us_base +
+  geom_polygon(aes(x = long, y = lat, group = group, fill = gallons_beer), color = "white") +
+  scale_fill_gradient(low='#d7edfe', high='#23619f', na.value="white", labels=scales::comma_format())+
+  geom_polygon(aes(x = long, y = lat, group = group), color = "white", fill = NA) +
+  theme_bw() +
+  ditch_the_axes +
+  geom_text(data=subset(plot_beers, offset==0), aes(x = long, y = lat, label = paste(as.character(round(gallons_beer/1000000, digits=2)))), color="black") +
+  geom_text_repel(data=subset(plot_beers, offset==1), aes(x = long, y = lat, label = paste(as.character(round(gallons_beer/1000000, digits=2)))), 
+                  box.padding = unit(0.4, "lines"),
+                  point.padding = unit(0.2, "lines"),
+                  direction="x", 
+                  nudge_x = 0.7) +
+  labs(title = "Gallons Beer Consumed By State ('000,000's)") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  guides(fill = guide_legend(title = "Gallons Beer Consumed"))
+
+p
+
+
+#####################################
+## CREATE MUSTANG SCORE MAPPING
+## THIS REPRESENTS THE PUNCHLINE FOR RECOMMENDATIONS ON HOPSY
+#####################################
+
+#Lets construct a scoring mechanism based on weighted averages
+#Market opportunity is a weighted function of several variables
+#Beer consumption in the state, the population of the state, the breweries in the state, and the beer diversity
+#Along with an assumption that ABV and IBU are predictors of "at home" demand
+#We will construct a score based on the sum of weighted averages for these metrics
+#Scoring will be scaled from 0 --> 100 as an aggregate for all states (e.g. the sum of all state scores sum to 100)
+
+total_pop <- sum(plot_beers$population_2016, na.rm=TRUE)
+total_gallons <- sum(plot_beers$gallons_beer, na.rm=TRUE)
+total_gallons_per_capita <- sum(plot_beers$gallons_beer_per_capita, na.rm=TRUE)
+total_breweries <- sum(plot_beers$count_breweries, na.rm=TRUE)
+total_brews <- sum(plot_beers$count_brews, na.rm=TRUE)
+total_medians <- sum(plot_beers$MedianABV, na.rm=TRUE)
+total_ibu <- sum(plot_beers$MedianIBU, na.rm=TRUE)
+
+plot_beers$market_score <- 100*(1/6)*(ifelse(is.na(plot_beers$gallons_beer_per_capita)==TRUE, 0, 0.8*plot_beers$gallons_beer_per_capita)/total_gallons_per_capita + 
+          ifelse(is.na(plot_beers$population_2016)==TRUE, 0, 1*plot_beers$population_2016)/total_pop + 
+          ifelse(is.na(plot_beers$count_breweries)==TRUE, 0, 1*plot_beers$count_breweries)/total_breweries + 
+          ifelse(is.na(plot_beers$count_brews)==TRUE, 0, 1*plot_beers$count_brews)/total_brews +
+          ifelse(is.na(plot_beers$MedianABV)==TRUE, 0, 1*plot_beers$MedianABV)/total_medians +
+          ifelse(is.na(plot_beers$MedianIBU)==TRUE, 0, 1*plot_beers$MedianIBU) /total_ibu)
+
+#lets see top score areas
+head(plot_beers[order(-plot_beers$market_score),], 5)
+
+
+#join for lats and longs
+plot_beers_states <- as_tibble(inner_join(states, plot_beers[,c(5,16)], by=c("region" = "full")))
+
+#create a base map
+us_base <- ggplot(data = plot_beers_states) + 
+  geom_polygon(aes(x = long, y = lat, group = group), color = "white") + 
+  coord_fixed(1.3) #+
+
+p <- us_base +
+  geom_polygon(aes(x = long, y = lat, group = group, fill = market_score), color = "white") +
+  scale_fill_gradient(low='#d7edfe', high='#23619f', na.value="white", labels=scales::comma_format())+
+  geom_polygon(aes(x = long, y = lat, group = group), color = "white", fill = NA) +
+  theme_bw() +
+  ditch_the_axes +
+  geom_text(data=subset(plot_beers, offset==0), aes(x = long, y = lat, label = paste(as.character(round(market_score, digits=2)))), color="black") +
+  geom_text_repel(data=subset(plot_beers, offset==1), aes(x = long, y = lat, label = paste(as.character(round(market_score, digits=2)))), 
+                  box.padding = unit(0.4, "lines"),
+                  point.padding = unit(0.2, "lines"),
+                  direction="x", 
+                  nudge_x = 0.7) +
+  labs(title = paste0("Mustang Score","\n","(All Scores Sum to 100)", "\n", "Equal Weights")) +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  guides(fill = guide_legend(title = paste0("Mustang Score","\n","(Higher Is Better)")))
+
+p
+
+
+#####################################
+## CREATE NEW GRAPHIC WITH DOUBLE WEIGHTED IBU
+#####################################
+
+
+plot_beers$market_score <- 100*(1/6)*(ifelse(is.na(plot_beers$gallons_beer_per_capita)==TRUE, 0, 0.8*plot_beers$gallons_beer_per_capita)/total_gallons_per_capita +  
+            ifelse(is.na(plot_beers$population_2016)==TRUE, 0, 0.8*plot_beers$population_2016)/total_pop + 
+            ifelse(is.na(plot_beers$count_breweries)==TRUE, 0, 0.8*plot_beers$count_breweries)/total_breweries + 
+            ifelse(is.na(plot_beers$count_brews)==TRUE, 0, 0.8*plot_beers$count_brews)/total_brews +
+            ifelse(is.na(plot_beers$MedianABV)==TRUE, 0, 0.8*plot_beers$MedianABV)/total_medians +
+            ifelse(is.na(plot_beers$MedianIBU)==TRUE, 0, 2*plot_beers$MedianIBU) /total_ibu)
+
+#lets see top score areas
+head(plot_beers[order(-plot_beers$market_score),], 5)
+
+
+#join for lats and longs
+plot_beers_states <- as_tibble(inner_join(states, plot_beers[,c(5,16)], by=c("region" = "full")))
+
+#create a base map
+us_base <- ggplot(data = plot_beers_states) + 
+  geom_polygon(aes(x = long, y = lat, group = group), color = "white") + 
+  coord_fixed(1.3) #+
+
+p <- us_base +
+  geom_polygon(aes(x = long, y = lat, group = group, fill = market_score), color = "white") +
+  scale_fill_gradient(low='#d7edfe', high='#23619f', na.value="white", labels=scales::comma_format())+
+  geom_polygon(aes(x = long, y = lat, group = group), color = "white", fill = NA) +
+  theme_bw() +
+  ditch_the_axes +
+  geom_text(data=subset(plot_beers, offset==0), aes(x = long, y = lat, label = paste(as.character(round(market_score, digits=2)))), color="black") +
+  geom_text_repel(data=subset(plot_beers, offset==1), aes(x = long, y = lat, label = paste(as.character(round(market_score, digits=2)))), 
+                  box.padding = unit(0.4, "lines"),
+                  point.padding = unit(0.2, "lines"),
+                  direction="x", 
+                  nudge_x = 0.7) +
+  labs(title = paste0("Mustang Score","\n","(All Scores Sum to 100)", "\n", "2x IBU Weight")) +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  guides(fill = guide_legend(title = paste0("Mustang Score","\n","(Higher Is Better)")))
+
+p
+
+
+
+
+#####################################
+## CREATE NEW GRAPHIC WITH DOUBLE WEIGHTED ABV
+#####################################
+
+
+plot_beers$market_score <- 100*(1/6)*(ifelse(is.na(plot_beers$gallons_beer_per_capita)==TRUE, 0, 0.8*plot_beers$gallons_beer_per_capita)/total_gallons_per_capita + 
+            ifelse(is.na(plot_beers$population_2016)==TRUE, 0, 0.8*plot_beers$population_2016)/total_pop + 
+            ifelse(is.na(plot_beers$count_breweries)==TRUE, 0, 0.8*plot_beers$count_breweries)/total_breweries + 
+            ifelse(is.na(plot_beers$count_brews)==TRUE, 0, 0.8*plot_beers$count_brews)/total_brews +
+            ifelse(is.na(plot_beers$MedianABV)==TRUE, 0, 2*plot_beers$MedianABV)/total_medians +
+            ifelse(is.na(plot_beers$MedianIBU)==TRUE, 0, 0.8*plot_beers$MedianIBU) /total_ibu)
+
+#lets see top score areas
+head(plot_beers[order(-plot_beers$market_score),], 5)
+
+
+#join for lats and longs
+plot_beers_states <- as_tibble(inner_join(states, plot_beers[,c(5,16)], by=c("region" = "full")))
+
+#create a base map
+us_base <- ggplot(data = plot_beers_states) + 
+  geom_polygon(aes(x = long, y = lat, group = group), color = "white") + 
+  coord_fixed(1.3) #+
+
+p <- us_base +
+  geom_polygon(aes(x = long, y = lat, group = group, fill = market_score), color = "white") +
+  scale_fill_gradient(low='#d7edfe', high='#23619f', na.value="white", labels=scales::comma_format())+
+  geom_polygon(aes(x = long, y = lat, group = group), color = "white", fill = NA) +
+  theme_bw() +
+  ditch_the_axes +
+  geom_text(data=subset(plot_beers, offset==0), aes(x = long, y = lat, label = paste(as.character(round(market_score, digits=2)))), color="black") +
+  geom_text_repel(data=subset(plot_beers, offset==1), aes(x = long, y = lat, label = paste(as.character(round(market_score, digits=2)))), 
+                  box.padding = unit(0.4, "lines"),
+                  point.padding = unit(0.2, "lines"),
+                  direction="x", 
+                  nudge_x = 0.7) +
+  labs(title = paste0("Mustang Score","\n","(All Scores Sum to 100)", "\n", "2x ABV Weight")) +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  guides(fill = guide_legend(title = paste0("Mustang Score","\n","(Higher Is Better)")))
+
+p
+
+
+
+
+```
+
+***
+
+***
+```{r codebook_generation}
+############################
+## GENERATE ALL CODEBOOKS
+############################]#####################################
+## GENERATE CODEBOOKS FOR ALL RAW DATASETS
+## PLEASE NOTE CODEBOOKS ONLY INCLUDE ORIGINAL DATA
+## TRANSITORY AND DERIVATIVE DATASETS ARE NOT INCLUDED
+#####################################
+
+setwd(paste0(root_dir,"/Codebook"))
+
+  suppressWarnings(suppressMessages(makeCodebook(beers, codebook = TRUE, replace=TRUE)))
+  suppressWarnings(suppressMessages(makeCodebook(breweries, codebook = TRUE, replace=TRUE)))
+  suppressWarnings(suppressMessages(makeCodebook(population, codebook = TRUE, replace=TRUE)))
+  suppressWarnings(suppressMessages(makeCodebook(consumption, codebook = TRUE, replace=TRUE)))
+
+setwd(root_dir)
+
+```
+
+***
+
+***
+
+***
+#Conclusion - Hopsy Data Analysis
+
+For this study R Mustangs was tasked with analyzing both Beers and Breweries data sets for the United States. The premise of this study is that Hopsy, a premier source-to-consumer beer distributor, is expanding their Market Penetration Strategy and would like to targeted areas and for signing up new Craft Brewers. Additionally, they plan on exploring cross-state distributions opportunities. This would entail selling from their existing stable of supplier beers, to new states with high market opportunity for their Craft beer consumption. 
+
+R Mustangs was ask to:
+
+* Analyze the U.S. Craft Beer and Brewery Market data and provide insights on product and market dynamics.
+
+* Recommend target geographies which can aligned to their 2020 Market Sourcing Strategy for the existing product offerings as well as potential cross-state distribution.
+
+* Recommend a data driven targeting strategy to evaluate these questions for future growth stage activities.
+
+
+While the data had some gaps (1005 missing values for IBU, 62 missing values for ABV, and 5 missing values for Styles), there was plenty of data to work with. It was found from this study that regional preferences on beer as well as State-level factors impact how many Breweries are in each state. It was also found that ABV and IBU are linearly corrolated and that IBU can serve as a relative proxy to determine overall categorical ABV percentiles. 
+
+In order to hav a fulsome conversation on Market Dynamics, the R Mustang team pulled in both Census population data and estimated per capita consumption data. This allowed us to visualize State-by-State differences. And, more importantly, it allowed us to introduce a framework for evaluating States for further discussion, prioritization, and future market penetration. We introduce the concept of the Mustang Scoring Framework, and through this initial analysis recommend that Hopsy review California, Colorado, Texas, Michigan, and Pennsylvania for the next States Hopsy should target. If those States already have penetration plans, the Mustang Scoring Framework provides a crystallized ranking system for review in order to determine the next State to target. 
+
+For future work, we would recommend analysis of pricing and incorporating that into the overall data framework. We would also recommend updating all datasets with the most current data lineages.
+
+We thank Hopsy for the opportunity to serve them and hope that we may be of service again in the very near future. 
+

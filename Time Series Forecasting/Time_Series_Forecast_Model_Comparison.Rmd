@@ -1,0 +1,1553 @@
+---
+title: "Predicting US Consumer Spending"
+author: "Maureen Stolberg, CIPM"
+date: "April 11, 2020"
+output:
+  prettydoc::html_pretty:
+    theme: cayman
+    highlight: github
+---
+
+
+## Introduction 
+
+###What is Consumer Spending?  
+
+Consumer spending is the total money spent on final goods and services by individuals and households for personal use and enjoyment in an economy. - Investopedia  
+
+Consumer spending is what households buy to fulfill everyday needs.  Every one of us is a consumer.  The things we buy every day create the demand that keeps the economy profitable and US labor force employed.  
+
+###Determinants of Consumer Spending:
+
+There are four determinants of Consumer Spending; disposable income, personal income per capita, consumer debt, and consumer confidence. These are things that affect how much your spend.  Changes in any of these components will affect consumer spending.  
+
+Disposable Income: Disposable income is the average income minus taxes and is one of the most important determinant of demand.  As income increases so does demand. IF demand increases, worker's wages rise, creating more spending-hence it's a virtuous cycle that leads to ongoing economic expansion.  
+
+Personal Income Per Capita:  Personal income per capita tells us how much each person has to spend. Income per person reveals whether a person's standard of living is also improving.  
+
+Consumer Debt:  Consumer debt includes credit card debt, auto loans, and school loans.  The greater level of consumer debt, the greater percentage of income is used to make load payments, the smaller percentage of income is available for consumers to spend on personal consumption expenditures.
+
+Consumer Confidence:  Consumer confidence proxied via the consumer confidence index helps us guage consumer expectations. If people are confident, they are more likely to spend now vs. later.  
+
+###Why do we care about Consumer Spending?
+
+Consumer spending drives GDP and is the single most important driving force of the US economy.  Because consumer spending drives a significantly large part of the US GDP, it is also one of the biggest determinants of economic health.  Understanding what consumers buy, don't buy, or wish to spend their money can tell us a lot of where the economy is currently and where it is heading in the near future.
+
+###How is Consumer Spending Measured?  
+
+Consumer spending is measured in several ways.  The most comprehensive way is the monthly personal consumption expenditures report that is released by the Bureau of Labor Statistics.  
+
+For the purposes of this study, we will use the quarterly times series provided by the St. Louis Federal Reserve Economics Database.  Please find the details listed below:
+
+###Dataset Description  
+**Data Source: ** St. Louis Federal Economic Database   
+**Time Period: ** January 1, 1990 - September 30, 2019  
+**Interval: ** Quarterly  
+**Measurement: ** Percentage Change from prior period  
+**Response Variable: ** U.S. Personal Consumption  
+**Explanatory Variables: ** Disposable Personal Income, Personal Income per Capita, Total Consumer Dect, Consumer Confidence Index  
+
+
+## Exploratory Data Analysis Section  
+
+
+```{r setup, include=FALSE}
+
+library(RColorBrewer)
+library(tidyverse)
+library(GGally)
+library(astsa)
+library(tswge)
+library(vars)
+library(varSel)
+library(nnfor)
+library(signal)
+library(PolynomF)
+library(plotrix)
+library(orcutt)
+library(tseries)
+library(ggplot2)
+library(RColorBrewer)
+
+
+#Upload Data from csv
+EI = read.csv("C:/git_repositories/MSDS 6373/Economic_Indices.90.csv")
+
+U.S.Consumption <- as.ts(EI$U.S.Consumption)
+DisposableIncome <-as.ts(EI$DisponsableIncome)
+ConsumerDebt <- as.ts(EI$ConsumerDebt)
+Income_per_Capita <- as.ts(EI$PersonalIncomePerCapita)
+
+x <- as.ts(EI$U.S.Consumption)
+n <- length(x)
+n1 <- n/2
+n2 <- n/2+1
+
+
+```
+
+Realization Plots of Response Variable:  US Consumption
+
+```{r echo=TRUE}
+plotts.wge(x)
+acf(x)
+
+```
+
+
+Stationarity Condition 3 Plots  
+First Half of Data: ACF Plot & Mean Estimate  
+
+```{R eda2, echo=TRUE, message=FALSE, warning=FALSE}
+
+acf(x[1:n1])
+mean(x[1:n1])
+
+```
+
+Second Half of Data: ACF Plot & Mean Estimate 
+
+```{R eda3, echo=TRUE}
+
+acf(x[n2:n])
+mean(x[n2:n])
+
+```
+
+Check for white noise using plot.sample.wge:
+
+```{R eda4, echo=TRUE}
+
+acf(x)
+
+```
+
+### Observations on the time series.  
+
+Time Series does not appear to be stationary.  
+         - Realizations shows wandering behavior with a slight hint of cyclic behavior.  
+         - Sample Autocorrelations shows dampening with a slight indication of sinusoidal cyclic behavioR AS evidenced with the spectral density peaking @ a frequency of 0 & 0.33.  
+         - Pattern differences across ACF 1 and ACF 2 suggest autocorrelation issues.  
+         - Spectral density indicates two peaks, one at zero and a second at 3.5, suggesting the pseudo-mix of wandering and cyclic behavior.  
+        
+
+This behavior suggest that if we were to stationize the data by taking the difference of (1-b)–  We can fit the resulting time series to an ARIMA Model/  or stationary AR Model  with a pair of complex conjugate roots.
+
+
+##**Model Selection Analysis**
+
+###**ARIMA Model** 
+
+Step 1:  Difference the data to stationarize the time series
+
+#####Differenced Data Time Realization Plots  
+
+```{R model 1a, echo=TRUE}
+
+d1.x= artrans.wge(x, phi.tr=1)
+
+
+```
+
+Check the acf's to confirm that data looks stationary:
+
+#####First Half of Differenced Data: ACF Plot & Mean Estimate  
+
+```{R model 1b, echo=TRUE}
+#Determine length in order to recieve conditional ACF plots
+dn <- length(d1.x)
+dn1 <- dn/2
+dn2 <- dn/2+1
+
+#1st Half dACF
+acf(d1.x[1:59])
+mean(d1.x[1:59])
+
+```
+  
+#####Second Half of Differenced Data: ACF Plot & Mean Estimate  
+
+```{R model 1c, echo=TRUE}
+
+#2nd Half dACF
+acf(d1.x[60:118])
+mean(d1.x[60:118])
+
+```
+
+Taking the difference of the data created stationarity across the time series.  
+        - Wandering behavior was removed.  Realization and mean behavior appear constant.  
+        - Sample Autocorrelations has the appearance of damped sinusoidal with frequency of 0.34 and cycle length of 4.  
+        - Pattern differences across ACF 1 and ACF 2 no longer exist.     
+        - Spectral density indicates peaks at 3.5, suggesting a cyclic behavior with a length of 4, Indicative to quarterly seasonal time series.
+
+Now that data appears stationary, run AIC5 to determine optimal P&Q based on AIC & BIC
+
+#####AIC5 results for AIC measure:  
+
+```{R model 1d, echo=TRUE}
+aic5.wge(d1.x, p=0:5, q=0:2)
+```
+
+#####AIC5 results for BIC measure:  
+
+```{R model 1e, echo=TRUE}
+aic5.wge(d1.x, p=0:5, q=0:2, type="bic")
+```
+  
+
+Based on AIC results-we will estimate parameters (using Burg) to fit an ARIMA Model(2,1,0) and an ARIMA Model (3,1,0) Model based on differenced data.
+
+### ARIMA Model (2,1,0)
+
+#####Parameter Estimates
+
+```{R model 1f, echo=TRUE}
+AR2 = est.ar.wge(d1.x, p=2, type='burg')
+mean(x)
+```
+
+####Final ARIMA Model (2,1,0) Equation:
+
+
+$$(1-B) (1+ 0.715B + 0.447B^2)(X_t - 0.6796)=a_{t}$$
+                $$𝜎^2_{a}=0.164$$
+
+Now that we have fit the model-lets run check residuals for white noise before proceed any further.
+
+####Residual Checks:
+
+Step 1: Lets looks at the residuals to see if they visually to see if behavior resembles white noise:
+
+#####Visual Check of Residual Sample Correlations  
+
+Residual sample correlations appear to be w/in 95% limit lines.
+
+```{R model 1g, echo=TRUE}
+plotts.wge(AR2$res)
+acf(AR2$res)
+
+```
+
+Residual sample correlations appear to be w/in 95% limit lines.
+
+Step 2: Let's run the lJung-Box test for k=24 to determine the significance  
+
+#####Ljung-Box test for k=24  
+
+L Jung Box Test did not reject the null hypothesis of white noise at K=24 with pvalue of .73.   
+
+
+```{R model 1h, echo=TRUE}
+ljung.wge(AR2$res,p=2)
+```
+
+
+Step 3:  Let's run the lJung-Box test for k=48 to determine the significance
+
+#####Ljung-Box test for k=48  
+
+L Jung Box Test did not reject the null hypothesis of white noise at K=48 with pvalue of .42.  
+
+
+```{R model 1i, echo=TRUE}
+ljung.wge(AR2$res,p=2,K=48) 
+```
+
+
+####Conclusion of Residual Checks:  
+
+Based on the visual sample correlation plots and the L Jung-Box Tests, the residuals from the fitted model appear to be white.
+
+### Forecast using ARIMA Model(2,1,0)
+
+
+```{R model 1fd, echo=TRUE}
+phi <- AR2$phi
+vara <- AR2$avar
+d <- 1
+fAR2 =fore.aruma.wge(x, phi=phi, d=d, n.ahead=8,limits=FALSE)
+f2=fore.aruma.wge(x, phi=phi,d=d, n.ahead=8,limits=TRUE)
+fAR2
+
+```
+
+
+####ASE for ARIMA Model (2,1,0) Forecast
+
+```{R model 1gd, echo=TRUE}
+#Determine ASE
+ARIMA_210.ASE = mean((x[112:119] - fAR2$f)^2)
+ARIMA_210.ASE
+
+```
+
+
+#### Compare ARIMA Model (2,1,0) forecast to Realizations
+
+#### Compare Spectral Densities  
+
+```{R model 1hd, echo=TRUE}
+sims = 5
+SpecDen = parzen.wge(d1.x, plot = "FALSE")
+plot(SpecDen$freq,SpecDen$pzgram, type = "l", lwd = 6)
+
+for( i in 1: sims)
+{
+  SpecDen2 = parzen.wge(gen.arma.wge(118, phi=phi, plot = "FALSE"), plot = "FALSE")
+  lines(SpecDen2$freq,SpecDen2$pzgram, lwd = 2, col = "red")
+}
+
+
+```
+
+#### Compare Acf's
+
+```{R model 1id, echo=TRUE}
+sims = 5
+ACF = acf(d1.x, plot = "FALSE")
+plot(ACF$lag ,ACF$acf , type = "l", lwd = 6)
+
+for( i in 1: sims)
+{
+  ACF2 = acf(gen.arma.wge(118, phi = phi, plot ="FALSE"), plot = "FALSE")
+  lines(ACF2$lag ,ACF2$acf, lwd = 2, col = "red")
+}
+
+```
+
+#### Compare Generated Realizations  
+
+```{R model 1jd, echo=TRUE}
+
+AR2.gen = gen.arma.wge(119, phi =phi, vara = vara)
+
+plotts.sample.wge(AR2.gen + mean(x))
+
+```
+  
+
+###**ARIMA Model (3,1,0)**
+
+#####Parameter Estimates
+
+```{R model 2fd, echo=TRUE}
+AR3 = est.ar.wge(d1.x, p=3, type='burg')
+mean(x)
+```
+  
+####Final ARIMA Model (3,1,0) Equation:
+
+
+$$(1-B) (1 + 0.690B + 0.407B^2 - 0.553B^3)(X_t - 0.6796)=a_{t}$$
+                $$𝜎^2_{a}=0.164$$  
+
+Now that we have fit the model-lets run check residuals for white noise before proceed any further.
+
+####Residual Checks:
+
+Step 1: Lets looks at the residuals to see if they visually look ok:
+
+#####Visual Check of Residual Sample Correlations  
+
+Residual sample correlations appear to be w/in 95% limit lines.
+
+```{R model 2gd, echo=TRUE}
+plotts.wge(AR3$res)
+acf(AR3$res)
+
+```
+
+Residual sample correlations appear to be w/in 95% limit lines.
+
+Step 2: Let's run the lJung-Box test for k=24 to determine the significance  
+
+#####Ljung-Box test for k=24  
+
+L Jung Box Test did not reject the null hypothesis of white noise at K=24 with pvalue of .77.   
+
+
+```{R model 2hd, echo=FALSE}
+ljung.wge(AR3$res,p=3)
+```
+
+
+Step 3:  Let's run the lJung-Box test for k=48 to determine the significance
+
+#####Ljung-Box test for k=48  
+
+L Jung Box Test did not reject the null hypothesis of white noise at K=48 with pvalue of .47.  
+
+
+```{R model 2id, echo=TRUE}
+ljung.wge(AR3$res,p=3,K=48) 
+```
+
+
+####Conclusion of Residual Checks:  
+
+Based on the visual sample correlation plots and the L Jung-Box Tests, the residuals from the fitted model appear to be white.
+
+### Forecast using ARIMA Model(3,1,0)
+
+
+```{R model 2fi, echo=TRUE}
+phi <- AR3$phi
+vara <- AR3$avar
+d <- 1
+fAR3 =fore.aruma.wge(x, phi=phi, d=d, n.ahead=8,limits=FALSE)
+f2AR3=fore.aruma.wge(x, phi=phi,d=d, n.ahead=8,limits=TRUE)
+fAR3
+```
+
+
+####ASE for ARIMA Model (3,1,0) Forecast
+
+```{R model 2u, echo=TRUE}
+ARIMA_310.ASE = mean((x[112:119] - fAR3$f)^2)
+ARIMA_310.ASE
+
+```
+  
+#### Compare ARIMA Model (3,1,0) forecast to Realizations
+
+#### Compare Spectral Densities  
+
+```{R model 2gi, echo=TRUE}
+phi <- AR3$phi
+vara <- AR3$avar
+d <- 1
+
+sims = 5
+SpecDen = parzen.wge(d1.x, plot = "FALSE")
+plot(SpecDen$freq,SpecDen$pzgram, type = "l", lwd = 6)
+
+for( i in 1: sims)
+{
+  SpecDen2 = parzen.wge(gen.arma.wge(118, phi=phi, plot = "FALSE"), plot = "FALSE")
+  lines(SpecDen2$freq,SpecDen2$pzgram, lwd = 2, col = "red")
+}
+
+```
+
+#### Compare Acf's
+
+```{R model 2hi, echo=TRUE}
+sims = 5
+ACF = acf(d1.x, plot = "FALSE")
+plot(ACF$lag ,ACF$acf , type = "l", lwd = 6)
+
+for( i in 1: sims)
+{
+  ACF3 = acf(gen.arma.wge(119, phi = phi, plot ="FALSE"), plot = "FALSE")
+  lines(ACF3$lag ,ACF3$acf, lwd = 2, col = "red")
+}
+
+```
+
+#### Compare Generated Realizations  
+
+```{R model 2ii, echo=TRUE}
+
+AR3.gen = gen.arma.wge(119, phi =phi, vara = vara)
+
+plotts.sample.wge(AR3.gen + mean(x))
+
+```
+   
+   
+###**VAR Models** 
+
+We will look at two different VAR models; one basic model and one model that looks at differenced data for each of the underlying variables. 
+
+Variables include:  US Consumption, Disposable Income, Personal Income per Capita, Consumer Debt, and Consumer Confidence.  We will use the first 111 data points to model the data and the last 8 data points to check our forecasts.
+
+A VAR model is a generalisation of the univariate autoregressive model for forecasting a vector of time series.  VAR enables us to simultaneously model several time series at once.
+
+####**Model 1: Basic VAR Model (Var1)**
+
+```{r VarSetup, include=FALSE}
+
+#Create Training Set leaving last 4 variables to be used as comparison
+x1 <- as.ts(EI$U.S.Consumption [1:111])
+x_test <- as.ts(EI$U.S.Consumption [1:119])
+x2 <- as.ts(EI$DisponsableIncome[1:111])
+x3 <- as.ts(EI$PersonalIncomePerCapita[1:111])
+x4 <- as.ts(EI$ConsumerDebt[1:111])
+x5 <- as.ts(EI$ConsumerConfidenceIndex[1:111])
+X_test<- EI$U.S.Consumption [112:119]
+```
+  
+
+Step 1:  Combine variables into one dataset and run VarSelect function to determine the optimal number of lags that should be used for the Master VAR Model. 
+
+The function VARSelect identified the VAR model as a VAR
+
+```{r var 1f, echo=TRUE}
+# VAR and VARselect are from CRAN package vars
+X=cbind(x1, x2, x3, x4, x5)
+VARselect(X, lag.max = 8, type = "const", season =NULL, exogen = NULL)
+
+```
+  
+The function VARSelect identified the VAR model as a VAR(3).  This is consistent with known previously published literature concerning popular lags used for predicting US consumption.  Lets proceed to step 2.  
+
+Step 2:  Fit the VAR to data model.  Based on the VarSelect results, set the number of lags to p=5 and run the model.  
+
+#### Basic VAR Model Prediction Summary
+```{r var 1g, echo=TRUE}
+#VARselect picks p=3 (using AIC)
+lsfit=VAR(X, p=4 ,type="const")
+summary(lsfit)
+preds=predict(lsfit,n.ahead=8)
+
+```
+  
+Final Model:  
+
+x1 = x1.l1 + x2.l1 + x3.l1 + x4.l1 + x5.l1 + x1.l2 + x2.l2 + x3.l2 + x4.l2 + x5.l2 
++ x1.l3 + x2.l3 + x3.l3 + x4.l3 + x5.l3 + x1.l4 + x2.l4 + x3.l4 + x4.l4 + x5.l4 + const 
+
+X= 0.162729x1.l1 + 0.193120x2.l1 -0.155567x3.l1 -0.054909x4.l1 -0.031336x5.l1 + 0.339916x1.l2 + 0.033315x2.l2 -0.083892x3.l2 -0.014164x4.l2 + 0.198021x5.l2 + 0.478210x1.l3 -0.075070x2.l3 + 0.016404x3.l3  + 0.0174114.l3 + 0.589366x5.l3 -0.094014x1.l4 -0.060414x2.l4 -0.036540x3.l4 + 0.004998x4.l4 + 0.325071x5.l4 + 0.332898const  
+
+Step 3:  Plot the Prediction outcomes using the forecasted value, upper and lower confidence intervals.  Predictions based on variable interactions that have significant value will show tighter confidence intervals.  Predictions based on variables that may only have a slight dependance on each other will have wider confidence intervals.    
+
+#### Basic VAR Model Prediction Plot  
+
+```{r var 1h, echo=TRUE}
+#Plot prediction
+fanchart(preds, colors = brewer.pal(n = 8, name = "Blues")) 
+```
+  
+#### Basic VAR Model Forecast: Predicted quarterly changes to US Consumption  
+
+```{r var 1i, echo=TRUE}
+#to access predict results
+preds$fcst$x1[1:8,1]
+```
+
+#### Basic VAR Model ASE Score  
+
+```{r var 1j, echo=TRUE}
+#Calculate ASE for X
+VAR1.ASE = mean((x_test[112:119] - preds$fcst$x1[,1])^2)
+VAR1.ASE
+```
+
+#### Basic VAR Model: Visual Comparisons of Predicted vs. Actual Time Series  
+
+```{r var 1k, echo=TRUE}
+#We have predicted differences .... calculate actual results
+startingPoints = x_test[112:119]-(mean(x))
+USConsumption_Forecast1 = preds$fcst$x1[,1:4] + startingPoints
+
+#Plot
+plot(seq(1,119,1), x_test, type="l", xlim = c(0,119), ylab = "US Consumer Spending", main = "8 Quarter US Consumer Spending Forecast")
+lines(seq(112,119,1), USConsumption_Forecast1[,1], type = "l", col = "red")
+
+```
+
+
+
+####**(Differenced Data) VAR Model 2:**
+
+Step 1:  We begin by taking the differences of the data in order to make them stationary.  
+
+```{r VarSetup2, include=FALSE}
+dx1 =artrans.wge(x1, phi.tr=1)
+dx2 =artrans.wge(x2, phi.tr=1)
+dx3 =artrans.wge(x3, phi.tr=1)
+dx4 =artrans.wge(x4, phi.tr=1)
+dx5 =artrans.wge(x5, phi.tr=1)
+```
+  
+  
+Step 2:  Combine variables into one dataset and run VarSelect function to determine the optimal number of lags that should be used for the Master VAR Model  
+
+```{r var 2f, echo=TRUE}
+dX=cbind(dx1, dx2, dx3, dx4, dx5)
+VARselect(dX, lag.max = 7, type = "const",season = NULL, exogen = NULL)
+
+```
+  
+The function VARSelect identified the VAR model as a VAR(4).  This is consistent with known previously published literature concerning popular lags used for predicting US consumption.  Lets proceed to step 2.  
+
+Step 2:  Fit the VAR to data model.  Based on the VarSelect results, set the number of lags to p=5 and run the model.  
+
+#### (Differenced Data) VAR Model 2: Prediction Summary
+```{r var 2g, echo=TRUE}
+lsfitdX=VAR(dX,p=4,type="const")
+summary(lsfitdX)
+preds.dX=predict(lsfitdX,n.ahead=8)
+
+```
+
+Final Model for X1 (US Consumption):
+X = X.l1 + X2.l1 + X3.l1 + X4.l1 + X5.l1 + X.l2 + X2.l2 + X3.l2 + X4.l2 + X5.l2 + X.l3 + X2.l3 + X3.l3 + X4.l3 + X5.l3 + X.l4 + X2.l4 + X3.l4 + X4.l4 + X5.l4 + const  
+
+
+X= -0.733X.l1 + 0.148X2.l1 -0.073X3.l1 -0.069X4.l1 + 0.087X5.l1 -0.291X.l2 + 0.140739X2.l2 -0.089059X3.l2 -0.098X4.l2 + 0.122X5.l2 + 0.144X.l3 + 0.013X2.l3 + 0.029X3.l3 -0.088X4.l3 + 0.388X5.l3 + 0.006X.l4 -0.069X2.l4 + 0.052X3.l4 -0.075X4.l4  + 0.274X5.l4 + 0.013const
+
+
+Step 5:  Plot the Prediction outcomes using the forecasted value, upper and lower confidence intervals.  Predictions based on variable interactions that have significant value will show tighter confidence intervals.  Predictions based on variables that may only have a slight dependance on each other will have wider confidence intervals.    
+
+#### (Differenced Data) VAR Model 2: Prediction Plot  
+
+```{r var 2h, echo=TRUE}
+fanchart(preds.dX, colors = brewer.pal(n = 8, name = "Blues")) 
+```
+  
+#### (Differenced Data) VAR Model 2: Predicted Time Series for US Consumption  
+
+```{r var 2i, echo=TRUE}
+#to access predict results
+preds.dX$fcst$dx1[1:8,1]
+```
+
+#### (Differenced Data) VAR Model 2: ASE Score  
+
+```{r var 2j, echo=FALSE}
+VAR2.ASE = mean((X_test - preds.dX$fcst$dx1[,1])^2)
+VAR2.ASE
+```
+
+####(Differenced Data) VAR Model 2: Visual Comparisons of Predicted vs. Actual Time Series  
+
+```{r var 2k, echo=TRUE}
+#We have predicted differences .... calculate actual results
+startingPoints = X_test
+USConsumption_Forecast = preds.dX$fcst$dx1[,1:4] + startingPoints
+
+#Plot
+plot(seq(1,119,1), x_test, type="l", xlim = c(0,119), ylab = "US Consumer Spending", main = "8 Quarter US Consumer Spending Forecast")
+lines(seq(112,119,1), USConsumption_Forecast[,1], type = "l", col = "red")
+
+```
+
+###**Neural Network Model** 
+
+We will look at 4 different Neural Network models; 2 univariate and 2 multivariate.
+
+####**Model 1: Univariate Default MLP Model**
+
+Step 1: Run basic model for response variable only.  Allow program to select parameter estimates. Run 100 reps.
+       
+##### Basic Neural Network (NN1) Model fit Summary  
+
+```{r NN1setup, include=TRUE}
+
+#Create Training Set leaving last 4 variables to be used as comparison
+X_train <- as.ts(EI$U.S.Consumption [1:111])
+X_test <- EI$U.S.Consumption [112:119]
+X1 <-as.ts(EI$DisponsableIncome[1:119])
+X2<- as.ts(EI$ConsumerDebt[1:119])
+X3 <- as.ts(EI$PersonalIncomePerCapita[1:119])
+X4 <- as.ts(EI$ConsumerConfidenceIndex[1:119])
+X_regressor <- data.frame(X1,X2,X3,X4)
+set.seed(2)
+```
+       
+##### Basic Neural Network (NN1) Model fit Summary 
+
+```{r NN1a, echo=TRUE}
+fit.nn1 = mlp(X_train, reps = 100)
+fit.nn1
+```
+
+#### Visual Diagram of Neural Network    
+
+```{r NN1b, echo=TRUE}
+plot(fit.nn1)
+```
+
+
+Step 2:  Forecast the next 8 periods for the basic model (NN1) using parameters derived from model fit summary  
+
+#### NN1 Model Forecast Results & Visual Plot
+
+```{r NN1c, echo=TRUE}
+fore.nn1 = forecast(fit.nn1, h=8)
+plot(fore.nn1)
+fore.nn1
+```
+
+Step 3:  Compare forecasted datapoints to actual data points to visualize difference
+
+##### NN1 Model Forecast Vs. Actual US Consumption Results 
+
+```{r NN1d, echo=TRUE}
+plot(X_test, type="l")
+lines(seq(1,8), fore.nn1$mean, col="blue")
+```
+
+Step 4:  Calculate ASE for future comparison purposes:
+
+#### ASE for (Basic Univariate) Neural Network Model 1:
+
+```{r NN1e, echo=TRUE}
+nn1.ASE = mean((X_test - fore.nn1$mean)^2)
+nn1.ASE
+```
+  
+  
+####**Model 2: (Univariate Differenced) Neural Network Model 2**
+
+Step 1: Run univariate MLP model using differenced data for response variable only.  Allow program to select parameter estimates, except for difference order option.  Run 100 reps.
+       
+##### Univariate set options- Neural Network (NN2) Model fit Summary  
+
+```{r NN2a, echo=TRUE}
+fit.nn2 = mlp(X_train, difforder=c(1), reps = 100, allow.det.season = FALSE)
+fit.nn2
+```
+  
+#### Visual Diagram of Neural Network    
+
+```{r NN2b, echo=TRUE}
+plot(fit.nn2)
+```
+
+
+Step 2:  Forecast teh next 8 periods for the basic model (NN2) using parameters derived from model fit summary  
+
+#### NN2 Model Forecast Results & Visual Plot
+
+```{r NN2c, echo=TRUE}
+fore.nn2 = forecast(fit.nn2, h=8)
+plot(fore.nn2)
+fore.nn2 
+```
+
+Step 3:  Compare forecasted datapoints to actual data points to visualize difference
+
+##### NN2 Model Forecast Vs. Actual US Consumption Results 
+
+```{r NN2d, echo=TRUE}
+plot(X_test, type="l")
+lines(seq(1,8), fore.nn2$mean, col="blue")
+```
+
+Step 4:  Calculate ASE for future comparison purposes:
+
+#### ASE for (Basic Univariate) Neural Network Model 2:
+
+```{r NN2e, echo=TRUE}
+nn2.ASE = mean((X_test - fore.nn2$mean)^2)
+nn2.ASE
+```
+  
+####**Model 3: Multivariate Neural Network Model 3**  
+
+We will construct two multivariate models.  The first model assumes that each regressor time series for the period forecasted is known.  The second model does not assume that all regressor data points are known.  We will first model each regressor using the neural network modeling technique and forecast estimates for the next 8 quarters (same outlook period as response variable).  We will then use those forecasts to create a new regressor data frame that will be used in for the neural network model that will be used to forecast  2 year (8 qtr) estimates for the quarterly change in US Consumption.  
+
+Note:  Regressor variables include:  Disposable Income, Personal Income per Capita, Consumer Debt, and Consumer Confidence.  Please refer to the EDA section for individual plots of each regressor time series.  
+
+
+Step 1: Run multivariate MLP model.  Allow program to select parameter estimates. Run 100 reps.
+
+       
+##### Multivariate Neural Network (NN3) Model fit Summary  
+
+```{r NN3a1w, echo=TRUE}
+fit.nn3 = mlp(X_train, reps=100, xreg= X_regressor)
+fit.nn3
+```
+  
+#### Visual Diagram of Neural Network    
+
+```{r NN3b1, echo=TRUE}
+plot(fit.nn3)
+```
+
+
+Step 2:  Forecast the next 8 periods for the multivariate model (NN3) using parameters derived from model fit summary  
+
+#### NN3 Model Forecast Results & Visual Plot
+
+```{r NN3c1, echo=TRUE}
+fore.nn3 = forecast(fit.nn3, h=8, xreg= X_regressor)
+plot(fore.nn3)
+fore.nn3
+```
+
+Step 3:  Compare forecasted datapoints to actual data points to visualize difference
+
+##### NN3 Model Forecast Vs. Actual US Consumption Results 
+
+```{r NN3d1, echo=TRUE}
+plot(X_test, type="l")
+lines(seq(1,8), fore.nn3$mean, col="blue")
+```
+
+Step 4:  Calculate ASE for future comparison purposes:
+
+#### ASE for Multivariate Neural Network Model 3:
+
+```{r NN3e1, echo=TRUE}
+nn3.ASE = mean((X_test - fore.nn3$mean)^2)
+nn3.ASE
+```
+  
+####**Model 4: Multivariate Neural Network Model 4**  
+
+Multivariate Neural Network Model 4 does not assume that all regressor data points are known.  For this model, we will first model each regressor using the neural network modeling technique and forecast estimates for the next 8 quarters (same outlook period as response variable).  We will then use those forecasts to create a new regressor data frame that will be used in for the neural network model that will be used to forecast  2 year (8 qtr) estimates for the quarterly change in US Consumption.  
+
+Note:  Regressor variables include:  Disposable Income, Personal Income per Capita, Consumer Debt, and Consumer Confidence.  Please refer to the EDA section for individual plots of each regressor time series.  
+
+**Part 1:** Use multilayer Perceptron (MLP) to forecast the next 8 periods for each regressor variable time series. Note- Regressor data cannot be modeled all at one time. Resulting forecasts must produce independant results.  This implies that each regressor is modeled separately.
+
+####**Regressor Data Forecast:  Disposable Income (fx1)**
+
+Step 1: Run basic model for response variable only.  Allow program to select parameter estimates. Run 100 reps.
+       
+##### Basic Neural Network (fx1) Model fit Summary    
+```{r NN4, echo=TRUE}
+fit.fx1 = mlp(X1, reps = 100)
+fit.fx1
+```
+  
+#### Visual Diagram of Neural Network   
+```{r NN4b, echo=TRUE}
+plot(fit.fx1)
+```
+  
+  Step 2:  Forecast the next 8 periods for the basic model using parameters derived from model fit summary  
+
+####Results of Regressor Forecast for Disposable Income (fx1)
+
+```{r NN4c, echo=TRUE}
+fore.fx1 = forecast(fit.fx1, h=8)
+plot(fore.fx1)
+fore.fx1
+#Combine forecasted values with existing data
+fx1 = EI$DisponsableIncome[1:111]
+fx1[112:119] = fore.fx1$mean[1:8]
+```
+
+####**Regressor Data Forecast: Personal Income per Capita (fx2)**
+
+Step 1: Run basic model for response variable only.  Allow program to select parameter estimates. Run 100 reps.
+       
+##### Basic Neural Network (fx2) Model fit Summary    
+```{r NN4d, echo=TRUE}
+fit.fx2 = mlp(X2, reps = 100)
+fit.fx2
+```
+  
+#### Visual Diagram of Neural Network   
+```{r NN4e, echo=TRUE}
+plot(fit.fx2)
+```
+  
+  Step 2:  Forecast the next 8 periods for the basic model using parameters derived from model fit summary  
+
+####Results of Regressor Forecast for Personal Income per Capita (fx2)
+
+```{r NN4f, echo=TRUE}
+fore.fx2 = forecast(fit.fx2, h=8)
+plot(fore.fx2)
+fore.fx2
+#Combine forecasted values with existing data
+fx2 = EI$PersonalIncomePerCapita[1:111]
+fx2[112:119] = fore.fx2$mean[1:8]
+```
+  
+####**Regressor Data Forecast: Consumer Debt (fx3)**
+
+Step 1: Run basic model for response variable only.  Allow program to select parameter estimates. Run 100 reps.
+       
+##### Basic Neural Network (fx3) Model fit Summary    
+```{r NN4g, echo=TRUE}
+fit.fx3 = mlp(X3, reps = 100)
+fit.fx3
+```
+  
+#### Visual Diagram of Neural Network   
+```{r NN4h, echo=TRUE}
+plot(fit.fx3)
+```
+  
+  Step 2:  Forecast the next 8 periods for the basic model using parameters derived from model fit summary  
+
+####Results of Regressor Forecast for Consumer Debt (fx3)
+
+```{r NN4i, echo=TRUE}
+fore.fx3 = forecast(fit.fx3, h=8)
+plot(fore.fx3)
+fore.fx3
+#Combine forecasted values with existing data
+fx3 = EI$ConsumerDebt[1:111]
+fx3[112:119] = fore.fx3$mean[1:8] 
+```
+  
+####**Regressor Data Forecast: Consumer Confidence (fx4)**
+
+Step 1: Run basic model for response variable only.  Allow program to select parameter estimates. Run 100 reps.
+       
+##### Basic Neural Network (fx4) Model fit Summary    
+```{r NN4j, echo=TRUE}
+fit.fx4 = mlp(X4, reps = 100)
+fit.fx4
+```
+  
+#### Visual Diagram of Neural Network   
+```{r NN4k, echo=TRUE}
+plot(fit.fx4)
+```
+  
+  Step 2:  Forecast the next 8 periods for the basic model using parameters derived from model fit summary  
+
+####Results of Regressor Forecast for Consumer Confidence (fx4)
+
+```{r NN4l, echo=TRUE}
+fore.fx4 = forecast(fit.fx4, h=8)
+plot(fore.fx4)
+fore.fx4
+#Combine forecasted values with existing data
+fx4 = EI$ConsumerConfidenceIndex[1:111]
+fx4[112:119] = fore.fx4$mean[1:8]
+```
+  
+**Part 2:** Construct multivariate MLP model using new regressor data estimates.  Using multilayer perceptron to forecast 2 year (8 qtr) estimates for the quarterly change in US Consumption.  
+  
+Step 1: Run multivariate MLP model.  Allow program to select parameter estimates. Run 100 reps.
+
+##### Multivariate Neural Network (NN4) Model fit Summary  
+
+```{r NN3a1, echo=TRUE}
+# combine forecasted regressor data into a new data frame
+fx_regressor <- data.frame(fx1, fx2, fx3, fx4)
+
+fit.nn3f = mlp(X_train, reps=100, xreg= fx_regressor)
+fit.nn3f
+```
+  
+#### Visual Diagram of Neural Network    
+
+```{r NN3b, echo=TRUE}
+plot(fit.nn3f)
+```
+
+Step 2:  Forecast the next 8 periods for the multivariate model (NN4) using parameters derived from model fit summary  
+
+#### NN4 Model Forecast Results & Visual Plot
+
+```{r NN3c, echo=TRUE}
+fore.nn3f = forecast(fit.nn3f, h=8, xreg= fx_regressor)
+plot(fore.nn3f)
+fore.nn3f
+```
+
+Step 3:  Compare forecasted datapoints to actual data points to visualize difference
+
+##### NN4 Model Forecast Vs. Actual US Consumption Results 
+
+```{r NN3d, echo=FALSE}
+plot(X_test, type="l")
+lines(seq(1,8), fore.nn3f$mean, col="blue")
+```
+
+Step 4:  Calculate ASE for future comparison purposes:
+
+#### ASE for Multivariate Neural Network Model 4:
+
+```{r NN3e, echo=TRUE}
+nn3f.ASE = mean((X_test - fore.nn3f$mean)^2)
+nn3f.ASE
+```
+###**Ensemble Models**   
+
+We will look at 2 different Ensemble Models; 1 univariate and 1 multivariate.
+
+The objective of each ensemble model is to help reduce the generalization error of the prediction.  The rules for constructing each ensemble is as follows:  
+      1. Models are diverse:  Models that ultilize different selection techniques will be chosen in order to reduce redundancy and maximize the benefits gained from diversifications.
+      2. Selected models produce independant results: Single model predictions must not depend on other or similiar models selected to be in the ensemble.  Predicted results must be derived from using the model on a stand-alone basis.
+      3.  Selection Criteria hierarchy: Analysis type, modeling technique, ASE performance.
+      
+####**Univariate Ensemble Model**  
+
+The univariate ensemble model seeks to optimize forecasting results by combining the top performing ARIMA model with the top performing univariate neural network model. Benefits include:  
+  1.  Offsetting risk of uncertainity through increased diversification. 
+
+Based on the criteria mentioned above-the two models selected are as follows:
+    1. ARIMA Model (3,1,0) [ASE=0.116238]
+    2. Univariate Neural Network Model 1 [ASE=0.098322]
+
+####Univariate Ensemble Model Plot  
+
+```{r ensemble 1a, echo=TRUE}
+fore.e1 = (fore.nn1$mean + fAR2$f)/2
+plot(x_test, type="l")
+lines(seq(112,119,1), fore.e1, col="red")
+
+```
+
+
+####Ensemble Model 2:  Predicted Vs. Actual Data Values 
+```{r em2h1, echo=TRUE}
+name1 <- "Predicted Results"
+value1 <- fore.e1
+
+color1 <-"red"
+color2 <-"Blue"
+
+plot(X_test, type="l",
+     ylab= "Predicted Values",
+main= " Quarterly Changes(%) in US Consumption")
+lines(seq(1,8), value1, col=color1)
+# Add a legend
+legend("bottomright", legend=c(name1, "Actual Data Series"),
+       col=c(color1, "black"), lty=1:2, cex=0.8)
+
+```
+ 
+
+####Univariate Ensemble Model ASE Score   
+
+```{r ensemble 1b, echo=TRUE}
+e1.ASE = mean((X_test- fore.e1)^2)
+e1.ASE
+
+```
+
+      
+####**Multivariate Ensemble Model**  
+
+The multivariate ensemble model seeks to optimize forecasting results by combining the top performing ARIMA model with the top performing multivariate neural network model. Benefits include:  
+  1.  Increased Diversification:  
+  2.  Offsetting risk of uncertainity:
+
+Based on the criteria mentioned above-the two models selected are as follows:
+    1. VAR Basic Model [ASE=0.0918322]
+    2. Multivariate Neural Network Model 4 [ASE=0.109409]        
+ 
+####Multivariate Ensemble Model Plot  
+
+```{r ensemble 2a, echo=TRUE}
+fore.e2 = (fore.nn3f $mean + preds$fcst$x1[,1])/2
+plot(x_test, type="l")
+lines(seq(112,119,1), fore.e2, col="red")
+
+```   
+    
+    
+####Ensemble Model 2:  Predicted Vs. Actual Data Values 
+```{r em21, echo=TRUE}
+name1 <- "Predicted Results"
+value1 <- fore.e2
+
+color1 <-"red"
+color2 <-"Blue"
+
+plot(X_test, type="l",
+     ylab= "Predicted Values",
+main= " Quarterly Changes(%) in US Consumption")
+lines(seq(1,8), value1, col=color1)
+# Add a legend
+legend("bottomright", legend=c(name1, "Actual Data Series"),
+       col=c(color1, color2, "black"), lty=1:2, cex=0.8)
+
+```
+
+
+  
+####Multivariate Ensemble Model ASE Score 
+
+```{r ensemble 2b, echo=TRUE}
+ensemble2.ASE = mean((X_test- fore.e2)^2)
+ensemble2.ASE
+
+```
+
+##**Comparing Models to determine best fit**
+
+Model Comparison Structure is as follows:  
+
+    **Univariate Model Comparisons**
+  1. ARIMA Model Comparison
+  2. Univariate Neural Network Model Comparison
+  3. ARIMA Vs. Neural Network 
+    
+  **Multivariate Model Comparisons**  
+  1. VAR Model Comparison
+  2. Multivariate Neural Network Comparison
+  3. VAR vs. Neural Network 
+  
+  ** Ensemble Model Comparisons**
+  1. Univariate Vs. Multivariate  
+  
+
+####**ARIMA Model 1 (2,1,0) vs. ARIMA Model 2(3,1,0)**  
+
+ARIMA MOdel 1:  ARIMA Model(2,1,0)
+ARIMA MOdel 2:  ARIMA Model(3,1,0)
+
+####ARIMA Model Comparison: Predicted Vs. Actual Time Series:  
+```{r mc1, echo=TRUE}
+name1 <- "ARIMA Model(2,1,0)"
+value1 <- fAR2$f
+ase1 <- ARIMA_210.ASE
+ase1_title <- "ARIMA Model(2,1,0) ASE Score:"
+
+name2 <- "ARIMA Model(3,1,0)"
+value2 <-fAR3$f
+ase2 <- ARIMA_310.ASE
+ase2_title <- "ARIMA Model(3,1,0) ASE Score:"
+  
+color1 <-"dark Magenta"
+color2 <-"Blue"
+
+plot(X_test, type="l",
+     ylab= "Predicted Values",
+main= " Quarterly Changes(%) in US Consumption")
+lines(seq(1,8), value1, col=color1)
+lines(seq(1,8), value2, col=color2)
+# Add a legend
+legend("bottomright", legend=c(name1, name2, "Actual Data Series"),
+       col=c(color1, color2, "black"), lty=1:2, cex=0.8)
+
+
+print(paste(ase1_title, round(ase1, digits=4)))
+print(paste(ase2_title, round(ase2, digits=4)))
+```
+
+
+####**Neural Network Model 1 vs. Neural Network Model 2**  
+
+Neural Network Model 1:  Basic MLP Model (Base Model)
+Neural Network Model 2:  MLP Model (with Difference Order= 1)  
+
+####Neural Network Comparison: Predicted Vs. Actual Time Series:  
+```{r mc2, echo=TRUE}
+name1 <- "Neural Network Model 1"
+value1 <- fore.nn1$mean
+ase1 <- nn1.ASE
+ase1_title <- "Neural Network Model 1 ASE Score:"
+
+name2 <- "Neural Network Model 2"
+value2 <-fore.nn2$mean
+ase2 <- nn2.ASE
+ase2_title <- "Neural Network Model 2 ASE Score:"
+  
+color1 <-"dark Magenta"
+color2 <-"Blue"
+
+plot(X_test, type="l",
+     ylab= "Predicted Values",
+main= " Quarterly Changes(%) in US Consumption")
+lines(seq(1,8), value1, col=color1)
+lines(seq(1,8), value2, col=color2)
+# Add a legend
+legend("bottomright", legend=c(name1, name2, "Actual Data Series"),
+       col=c(color1, color2, "black"), lty=1:2, cex=0.8)
+
+
+print(paste(ase1_title, round(ase1, digits=4)))
+print(paste(ase2_title, round(ase2, digits=4)))
+```
+
+
+####**Top Performing: ARIMA vs. Neural Network Model**  
+
+Top Performing ARIMA Model:  ARIMA Model (3,1,0)  
+Top Performing Neural Network Model:  Neural Network Model 1 (Basic MLP) 
+
+####Top Performing ARIMA Model Vs. Top Performing Neural Network Model:
+```{r mc3, echo=TRUE}
+name1 <- "ARIMA Model"
+value1 <- fAR2$f
+ase1 <-ARIMA_210.ASE
+
+name2 <- "Neural Network Model"
+value2 <-fore.nn1$mean
+ase2 <- nn1.ASE
+  
+color1 <-"Dark Magenta"
+color2 <-"Blue"
+
+plot(X_test, type="l",
+     ylab= "Predicted Values",
+main= " Quarterly Changes(%) in US Consumption")
+lines(seq(1,8), value1, col=color1)
+lines(seq(1,8), value2, col=color2)
+# Add a legend
+legend("bottomright", legend=c(name1, name2, "Actual Data Series"),
+       col=c(color1, color2, "black"), lty=1:2, cex=0.8)
+
+
+print(paste("ARIMA Model (2,1,0) ASE Score:", round(ase1, digits=4)))
+print(paste("Neural Network Model 1 ASE Score:", round(ase2, digits=4)))
+```
+
+
+####**VAR Model 1 vs. VAR Model 2**  
+
+
+VAR Model 1:  VAR Model fitted to p=5 (Basic Model)
+VAR Model 2:  VAR Model fitted to p=5 (with Difference Order= 1) 
+
+####VAR Model Comparison: Predicted Vs. Actual Time Series:  
+```{r mc4, echo=TRUE}
+name1 <- "VAR 1 Model"
+value1 <- preds$fcst$x1[,1]
+ase1 <- VAR1.ASE
+ase1_title <- "VAR 1 Model ASE Score:"
+
+name2 <- "VAR 2 Model"
+value2 <-preds.dX$fcst$dx1[,1]
+ase2 <- VAR2.ASE
+ase2_title <- "VAR 2 Model ASE Score:"
+  
+color1 <-"dark Magenta"
+color2 <-"Blue"
+
+plot(X_test, type="l",
+     ylab= "Predicted Values",
+main= " Quarterly Changes(%) in US Consumption")
+lines(seq(1,8), value1, col=color1)
+#lines(seq(1,8), value2, col=color2)
+# Add a legend
+legend("bottomright", legend=c( name1,  "Actual Data Series"),
+       col=c(color1, color2,  "black"), lty=1:2, cex=0.8)
+
+
+print(paste(ase1_title, round(ase1, digits=4)))
+#print(paste(ase2_title, round(ase2, digits=4)))
+```
+
+
+####**Neural Network Model 3 vs. Neural Network Model 4**  
+
+Neural Network Model 3:  multivariate MLP model with known regressors
+Neural Network Model 4:  multivariate MLP model with Regressor forecasts 
+
+####Neural Network Comparison: Predicted Vs. Actual Time Series:  
+```{r mc5, echo=TRUE}
+name1 <- "Neural Network Model 3"
+value1 <- fore.nn3$mean
+ase1 <- nn3.ASE
+ase1_title <- "Neural Network Model 3 ASE Score:"
+
+name2 <- "Neural Network Model 4"
+value2 <-fore.nn3f$mean
+ase2 <- nn3f.ASE
+ase2_title <- "Neural Network Model 4 ASE Score:"
+  
+color1 <-"dark Magenta"
+color2 <-"Blue"
+
+plot(X_test, type="l",
+     ylab= "Predicted Values",
+main= " Quarterly Changes(%) in US Consumption")
+lines(seq(1,8), value1, col=color1)
+lines(seq(1,8), value2, col=color2)
+# Add a legend
+legend("bottomright", legend=c(name1, name2, "Actual Data Series"),
+       col=c(color1, color2, "black"), lty=1:2, cex=0.8)
+
+
+print(paste(ase1_title, round(ase1, digits=4)))
+print(paste(ase2_title, round(ase2, digits=4)))
+``` 
+
+
+####**Top Performing: VAR vs. Neural Network (Multi) Model**  
+
+Top Performing VAR Model:  VAR 1 Model  
+Top Performing Neural Network Model:  Neural Network Model 4
+
+####Top Performing VAR Model Vs. Top Performing Neural Network Model:
+```{r mc6, echo=TRUE}
+name1 <- "VAR Model"
+value1 <- preds$fcst$x1[,1]
+ase1 <- VAR1.ASE
+ase1_title <- "VAR Model ASE Score:"
+
+
+name2 <- "Neural Network Model"
+value2 <-fore.nn3f$mean
+ase2 <- nn3f.ASE
+ase2_title <- "Neural Network Model ASE Score:"
+  
+color1 <-"Dark Magenta"
+color2 <-"Blue"
+
+plot(X_test, type="l",
+     ylab= "Predicted Values",
+main= " Quarterly Changes(%) in US Consumption")
+lines(seq(1,8), value1, col=color1)
+lines(seq(1,8), value2, col=color2)
+# Add a legend
+legend("bottomright", legend=c(name1, name2, "Actual Data Series"),
+       col=c(color1, color2, "black"), lty=1:2, cex=0.8)
+
+
+print(paste(ase1_title, round(ase1, digits=4)))
+print(paste(ase2_title, round(ase2, digits=4)))
+```
+
+  
+####**Top Performing: Univariate vs. Multivariate Model**  
+
+Top Performing Univariate Model:  Neural Network Model 1  
+Top Performing Multivariate Model:  VAR 1 Model
+
+####Top Performing VAR Model Vs. Top Performing Neural Network Model:
+```{r mc7, echo=TRUE}
+
+name1 <- "Univariate (NN) Model"
+value1 <- fore.nn1$mean
+ase1 <- nn1.ASE
+ase1_title <- "Univariate Model ASE Score:"
+
+name2 <- "Multivariate (VAR) Model"
+value2 <- preds$fcst$x1[,1]
+ase2 <- VAR1.ASE
+ase2_title <- "Multivariate Model ASE Score:"
+  
+color1 <-"Dark Magenta"
+color2 <-"Blue"
+
+plot(X_test, type="l",
+     ylab= "Predicted Values",
+main= " Quarterly Changes(%) in US Consumption")
+lines(seq(1,8), value1, col=color1)
+lines(seq(1,8), value2, col=color2)
+# Add a legend
+legend("bottomright", legend=c(name1, name2, "Actual Data Series"),
+       col=c(color1, color2, "black"), lty=1:2, cex=0.8)
+
+
+print(paste(ase1_title, round(ase1, digits=4)))
+print(paste(ase2_title, round(ase2, digits=4)))
+```
+  
+####**Ensemble 1 Vs. Ensemble 2 Model**  
+
+Univariate Ensemble Model: ARIMA Model (2,1,0) & NN1 Model 
+Multivariate Ensemble Model: VAR1 model & NN4 model
+
+####Ensemble Model Comparison: Predicted Vs. Actual Time Series: 
+```{r mc8, echo=TRUE}
+
+name1 <- "Univariate Ensemble Model"
+value1 <- fore.e1
+ase1 <- e1.ASE
+ase1_title <- "Univariate Ensemble Model ASE Score:"
+
+name2 <- "Multivariate Ensemble Model"
+value2 <- fore.e2
+ase2 <- ensemble2.ASE
+ase2_title <- "Multivariate Ensemble Model ASE Score:"
+  
+color1 <-"Dark Magenta"
+color2 <-"Blue"
+
+plot(X_test, type="l",
+     ylab= "Predicted Values",
+main= " Quarterly Changes(%) in US Consumption")
+lines(seq(1,8), value1, col=color1)
+lines(seq(1,8), value2, col=color2)
+# Add a legend
+legend("bottomright", legend=c(name1, name2, "Actual Data Series"),
+       col=c(color1, color2, "black"), lty=1:2, cex=0.8)
+
+
+print(paste(ase1_title, round(ase1, digits=4)))
+print(paste(ase2_title, round(ase2, digits=4)))
+```  
+
+  
+```{r summary1, echo=TRUE}
+cat("ASE Score for all Models reviewed in Study:\n\n",
+"Univariate-ARIMA Models:\n",
+"ARIMA Model (2,1,0) ASE Score:", round(ARIMA_210.ASE, digits=4),"\n",
+"ARIMA Model (3,1,0) ASE Score:", round(ARIMA_310.ASE, digits=4),"\n\n",
+"Univariate-NN Models:\n",
+"Neural Network Model 1 ASE Score:", round(nn1.ASE, digits=4),"\n",
+"Neural Network Model 2 ASE Score:", round(nn2.ASE, digits=4),"\n\n",
+"Multivariate-VAR Models:\n",
+"VAR Model 1 ASE Score:", round(VAR1.ASE, digits=4),"\n",
+"VAR Model 2 ASE Score:", round(VAR2.ASE, digits=4),"\n\n",
+"Multivariate-NN Models:\n",
+"Neural Network Model 3 ASE Score:", round(nn3.ASE, digits=4),"\n",
+"Neural Network Model 4 ASE Score:", round(nn3f.ASE, digits=4),"\n\n",
+"Ensemble Models:\n",
+"Univariate Ensemble Model ASE Score:", round(e1.ASE, digits=4),"\n",
+"Multivariate Ensemble Model ASE Score:", round(ensemble2.ASE, digits=4),"\n\n",
+"Top Performing Model:\n",
+"Univariate (NN1) Model ASE Score:", round(nn1.ASE, digits=4),"\n",
+"Multivariate (VAR1) Model ASE Score:", round(VAR1.ASE, digits=4))
+
+```
+
+
+ 
+##**Model Forecast**
+
+Selected Model:  Univariate Neural Network Model 1
+
+##### Basic Neural Network (NNM final) Model fit Summary 
+
+```{r fNN1a, echo=TRUE}
+fX_train = as.ts(EI$U.S.Consumption[1:119])
+fit.nnm = mlp(fX_train, reps = 100)
+fit.nnm
+```
+
+#### Visual Diagram of Neural Network    
+
+```{r fNN1b, echo=TRUE}
+plot(fit.nnm)
+```
+
+
+Step 2:  Forecast the next 8 periods for the basic model (NN1) using parameters derived from model fit summary  
+
+#### NN1 Model Forecast Results & Visual Plot
+
+```{r fNN1c, echo=TRUE}
+fore.nnm = forecast(fit.nnm, h=8)
+plot(fore.nnm)
+
+```
+  
+Over the next 8 quarters, we are 95% confident that the quarterly change in US consumption will be between 0.4967% and 0.9180%.  Our best quarterly estimate is 0.6877%.  
+
+#### NN1 Model Forecast Results & with confidence Interval
+```{r fNN1c2, echo=TRUE}
+
+UL = fore.nnm$mean + (1.98 * fit.nnm$MSE)
+LL = fore.nnm$mean - (1.98 * fit.nnm$MSE)
+fnnm.df = data.frame(fore.nnm$mean, UL, LL)
+
+plot(fnnm.df$fore.nnm.mean, type="l",
+     ylab= "Predicted Values", xlab = "Quarters Since January 1, 1991",
+main= " Predicted Values with Confidence Intervals",  ylim=c(.2,1.2))
+lines(seq(120,127), fnnm.df$UL, col="blue")
+lines(seq(120,127), fnnm.df$LL, col="blue")
+# Add a legend
+legend("bottomright", legend=c("CI Upper Limit", "CI Lower Limit", "Forecast"),
+       col=c("blue", "blue", "black"), lty=1:2, cex=0.8)
+
+```
+
+##**APPENDIX: Additional Modeling of Secondary Variables**
+
+###**Simple AR Model Forecasts for each Regressor Data Variable**
+
+Step 1:  Generate independant forecasts (using the standard AR model identification method) for each underlying variable that is used in today's analysis. Steps include:  
+        1.  Run AIC to determine P&Q 
+        2.  Fit model using Burg Estimates  
+        3.  Forecast the next 8 quarters using selected model    
+  
+#### Basic AR Model:  US Consumption (x1) Independant Variable Forecast  
+
+```{r var 1a, echo=TRUE}
+p1=aic.wge(x1,p=0:8,q=0:0)
+p1 # aic picks p=4
+x1.est=est.ar.wge(x1,p=p1$p)
+fore.arma.wge(x1,phi=x1.est$phi,n.ahead=8,lastn=FALSE,limits=FALSE)
+
+```
+
+#### Basic AR Model:  US Disposable Income (x2) Variable Forecast  
+
+```{r var 1b, echo=TRUE}
+p2=aic.wge(x2,p=0:8,q=0:0)
+p2 # aic picks p=2
+x2.est=est.ar.wge(x2,p=p2$p)
+fore.arma.wge(x2,phi=x2.est$phi,n.ahead=8,lastn=FALSE,limits=FALSE)
+
+```
+
+#### Basic AR Model:  Personal Income per Capita (x3) Variable Forecast  
+
+```{r var 1c, echo=TRUE}
+p3=aic.wge(x3,p=0:8,q=0:0)
+p3 # aic picks p=2
+x3.est=est.ar.wge(x3,p=p3$p)
+fore.arma.wge(x3,phi=x3.est$phi,n.ahead=8,lastn=FALSE,limits=FALSE)
+
+```
+
+#### Basic AR Model:  Consumer Debt (x4) Variable Forecast 
+
+```{r var 1d, echo=TRUE}
+#x4 Consumer Debtforecast
+p4=aic.wge(x4,p=0:8,q=0:0)
+p4 # aic picks p=2
+x4.est=est.ar.wge(x4,p=p4$p)
+fore.arma.wge(x4,phi=x4.est$phi,n.ahead=8,lastn=FALSE,limits=FALSE)
+
+```
+
+#### Basic AR Model:  Consumer Confidence (x5) Variable Forecast 
+
+```{r var 1e, echo=TRUE}
+p5=aic.wge(x5,p=0:8,q=0:0)
+p5 # aic picks p=2
+x5.est=est.ar.wge(x5,p=p5$p)
+fore.arma.wge(x5,phi=x5.est$phi,n.ahead=8,lastn=FALSE,limits=FALSE)
+
+```
+
+###** AR Model Forecasts using Differenced Data for each Regressor Time Series**
+
+Step 1:  We begin my taking the differences of the data to make them stationary.   
+
+Step 2:  Generate independant forecasts (using the standard AR model identification method) for each underlying variable that is used in today's analysis. Steps include:  
+        1.  Run AIC to determine P&Q 
+        2.  Fit model using Burg Estimates  
+        3.  Forecast the next 8 quarters using selected model    
+  
+####(Differenced Data) AR Model 2: US Consumption (x1) Independant Variable Forecast  
+
+```{r var 2a, echo=TRUE}
+dp1=aic.wge(dx1,p=0:8,q=0:0)
+dp1 # aic picks p=2
+dx1.est=est.ar.wge(dx1,p=dp1$p)
+fore.arma.wge(dx1,phi=dx1.est$phi,n.ahead=8,lastn=FALSE,limits=FALSE)
+
+```
+
+####(Differenced Data) AR Model 2: US Disposable Income (x2) Variable Forecast  
+
+```{r var 2b, echo=TRUE}
+dp2=aic.wge(dx2,p=0:8,q=0:0)
+dp2 # aic picks p=8
+dx2.est=est.ar.wge(dx2,p=dp2$p)
+fore.arma.wge(dx2,phi=dx2.est$phi,n.ahead=8,lastn=FALSE,limits=FALSE)
+
+```
+
+####(Differenced Data) AR Model 2: Personal Income per Capita (x3) Variable Forecast  
+
+```{r var 2c, echo=TRUE}
+dp3=aic.wge(dx3,p=0:8,q=0:0)
+dp3 # aic picks p=2
+dx3.est=est.ar.wge(dx3,p=dp3$p)
+fore.arma.wge(dx3,phi=dx3.est$phi,n.ahead=8,lastn=FALSE,limits=FALSE)
+
+```
+
+####(Differenced Data) AR Model 2: Consumer Debt (x4) Variable Forecast 
+
+```{r var 2d, echo=TRUE}
+dp4=aic.wge(dx4,p=0:8,q=0:0)
+dp4 # aic picks p=4
+dx4.est=est.ar.wge(dx4,p=dp4$p)
+fore.arma.wge(dx4,phi=dx4.est$phi,n.ahead=8,lastn=FALSE,limits=FALSE)
+
+```
+
+#### (Differenced Data) AR Model 2:  Consumer Confidence (x5) Variable Forecast 
+
+```{r var 2e, echo=TRUE}
+dp5=aic.wge(dx5,p=0:8,q=0:0)
+dp5 # aic picks p=6
+dx5.est=est.ar.wge(dx5,p=dp5$p)
+fore.arma.wge(dx5,phi=dx5.est$phi,n.ahead=8,lastn=FALSE,limits=FALSE)
+
+```
+

@@ -8,7 +8,7 @@
 **Presentation Files(ppt, pdf):**  
 Predicting Seasonal Influenza Case Study Presentation.pdf   
 
-**R Markdown Files (rmd, html)**  
+**R Markdown Files (rmd, html):**  
 Predicting Seasonal Influenza.rmd
 Predicting Seasonal Influenza.html
 

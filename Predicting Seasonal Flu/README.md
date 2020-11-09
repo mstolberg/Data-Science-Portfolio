@@ -9,4 +9,7 @@
 Predicting Seasonal Influenza Case Study Presentation.pdf   
 
 **R Markdown Files (rmd, html)**  
-Predicting Seasonal Influenza.rmd  
+Predicting Seasonal Influenza.rmd
+Predicting Seasonal Influenza.html
+
+_Please note:  If you wish to view the "R" markdown html file, please make sure to copy over the rmd and html file._
